@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
+    <title>Fit-Track Pro Cloud</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <div class="date-selector">
+                <button onclick="setToday()">오늘</button>
+                <input type="date" id="global-date" onchange="updateGlobalDate(this.value)">
+            </div>
+            <h1 id="view-title">성장 캘린더</h1>
+        </header>
+        <main id="app-content"></main>
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-tab="dash">🗓️ 홈</button>
+            <button class="nav-btn" data-tab="workout">🏋️ 운동</button>
+            <button class="nav-btn" data-tab="food">🍱 식단</button>
+            <button class="nav-btn" data-tab="history">📜 기록</button>
+            <button class="nav-btn" data-tab="graph">📈 분석</button>
+            <button class="nav-btn" data-tab="mgmt">⚙️ 설정</button>
+        </nav>
+    </div>
+    <script src="db_config.js"></script>
+    <script src="dashboard.js"></script>
+    <script src="workout.js"></script>
+    <script src="nutrition.js"></script>
+    <script src="history.js"></script>
+    <script src="graphs.js"></script>
+    <script src="management.js"></script>
+    <script src="router.js"></script>
+</body>
+</html>
