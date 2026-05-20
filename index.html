@@ -259,6 +259,23 @@ button.primary{
 }
 
 /* ===================================================
+   COURSE CARDS
+=================================================== */
+.course-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.course-card{
+    border-radius:16px;padding:18px 14px;text-align:center;
+    border:2px solid transparent;cursor:pointer;
+    transition:all .2s;position:relative;overflow:hidden;
+}
+.course-card.active{border-color:currentColor;}
+.course-card:active{transform:scale(.97);}
+.course-list-item{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:12px 14px;background:var(--day-bg);border-radius:12px;
+    margin-bottom:8px;border-left:3px solid var(--course-col,var(--primary));
+}
+
+/* ===================================================
    TOAST NOTIFICATION
 =================================================== */
 #toast{
@@ -287,6 +304,7 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
     <nav class="bottom-nav">
         <button class="nav-btn active" data-tab="dash">🗓️ 홈</button>
         <button class="nav-btn" data-tab="workout">🏋️ 운동</button>
+        <button class="nav-btn" data-tab="course">🗂️ 코스</button>
         <button class="nav-btn" data-tab="history">📜 기록</button>
         <button class="nav-btn" data-tab="graph">📈 분석</button>
         <button class="nav-btn" data-tab="mgmt">⚙️ 설정</button>
@@ -330,26 +348,11 @@ function getLib(){return JSON.parse(localStorage.getItem('workout_lib')||'[]');}
 function getHistory(){return JSON.parse(localStorage.getItem('workout_history')||'{}');}
 function getPresets(){return JSON.parse(localStorage.getItem('food_presets')||'{}');}
 
-// PPL 분류
+// 부위 분류 (5부위 기반)
 function classifyPPL(w){
-    // 1순위: 운동 데이터에 직접 저장된 PPL
-    if(w.ppl && w.ppl!=='자동')return w.ppl;
-    // 2순위: workout_history에 저장된 PPL (한번 설정하면 기억)
-    const hist=getHistory();
-    if(hist[w.name] && hist[w.name].ppl && hist[w.name].ppl!=='자동')return hist[w.name].ppl;
-    // 3순위: 부위 기반 자동 추정 (폴백)
-    const push=['가슴','어깨'];
-    const pull=['등'];
-    const pullKw=['풀업','로우','컬','풀다운','풀 다운','싯티드','매달리기','데드','인버티드'];
-    if(w.part==='하체')return '하체';
-    if(push.includes(w.part))return '밀기';
-    if(pull.includes(w.part))return '당기기';
-    if(w.part==='팔'){
-        if(pullKw.some(k=>(w.name||'').includes(k)))return '당기기';
-        return '밀기';
-    }
-    if(w.part==='유산소')return '유산소';
-    return '기타';
+    const PARTS=['어깨','가슴','등','하체','팔'];
+    if(PARTS.includes(w.part))return w.part;
+    return w.part||'기타';
 }
 
 // 1RM (Epley)
@@ -458,6 +461,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         const map={
             dash:['성장 캘린더',renderDashboard],
             workout:['운동 기록',renderWorkout],
+            course:['운동 코스',renderCourse],
             history:['전체 기록',renderHistory],
             graph:['변화 분석',renderGraphs],
             mgmt:['설정 및 관리',renderManagement],
@@ -566,50 +570,59 @@ function renderDaySummary(ds){
     </div>`;
 }
 
-// ─── PPL별 기본 추천 운동 목록 ───────────────────────────
-const PPL_DEFAULTS={
-    밀기:[
-        {name:'벤치 프레스',    tip:'가슴 중앙 자극. 등 아치, 발 고정.'},
-        {name:'체스트 프레스',  tip:'기계식. 초보자 안전하게 시작하기 좋음.'},
-        {name:'펙토럴 플라이',  tip:'가슴 외측 스트레칭. 저중량 고반복.'},
-        {name:'OHP',            tip:'어깨 전면+중간. 코어 단단히 유지.'},
-        {name:'숄더 덤벨 프레스',tip:'앉아서 진행. 등받이 활용 권장.'},
-        {name:'사레레',         tip:'측면 삼각근. 팔꿈치 약간 구부린 상태로.'},
-        {name:'트러이셉스 푸시다운', tip:'삼두 고립. 팔꿈치 몸통 고정.'},
-        {name:'팔굽혀펴기',     tip:'맨몸. 세트 사이 짧게 쉬기.'},
-    ],
-    당기기:[
-        {name:'렛 풀 다운',     tip:'광배 자극. 어깨 내리고 팔꿈치 옆으로.'},
-        {name:'시티드 로우',    tip:'등 중앙. 팔꿈치 뒤로 강하게 당기기.'},
-        {name:'풀업',           tip:'자체중량. 광배 수축 느끼며 천천히.'},
-        {name:'바벨 바이셉스 컬',tip:'이두. 팔꿈치 고정, 상완 흔들지 않기.'},
-        {name:'인버티드 로우',  tip:'풀업 전단계. 다리로 강도 조절.'},
-        {name:'스컬 크러셔',    tip:'이두·삼두 함께. 팔꿈치 안쪽으로 모으기.'},
-        {name:'데드 리프트',    tip:'전신복합. 등 펴고 힙힌지 집중.'},
-        {name:'밴드 풀업',      tip:'밴드 보조. 실제 풀업 연습에 최적.'},
-    ],
-    하체:[
-        {name:'레그 프레스',    tip:'발 높이·넓이로 자극 부위 변경 가능.'},
-        {name:'레그 익스텐션',  tip:'대퇴사두 고립. 끝까지 쭉 차기.'},
-        {name:'레그 컬',        tip:'햄스트링. 무릎 고정, 최대한 뒤로 차기.'},
-        {name:'데드 리프트',    tip:'햄스트링+둔근. 힙힌지 필수.'},
-        {name:'이너싸이',       tip:'내전근. 천천히 벌리고 강하게 모으기.'},
-        {name:'라잉 레그 컬',   tip:'햄스트링 집중. 무릎 패드 위치 중요.'},
-        {name:'레그 레이즈',    tip:'복근+하체. 발 바닥 닿기 직전에 올리기.'},
-        {name:'스쿼트',         tip:'하체 복합운동의 왕. 무릎이 발끝 방향.'},
-    ],
+// ─── 5부위 코스 데이터 ───────────────────────────────────
+const COURSE_DATA={
+    어깨:{col:'#a855f7',emo:'🏔️',exercises:[
+        {name:'OHP',                           tip:'어깨 전면+중간. 코어 단단히, 팔꿈치 넓어지지 않게.'},
+        {name:'숄더 덤벨 프레스',               tip:'앉아서 진행. 덤벨 눈 높이까지 내렸다 올리기.'},
+        {name:'사레레(사이드레터럴레이즈)',      tip:'저중량 고반복. 어깨 으쓱하지 않기.'},
+    ]},
+    가슴:{col:'#ef4444',emo:'💪',exercises:[
+        {name:'벤치 프레스',                    tip:'3대 운동. 등 아치, 발 고정, 내릴 때 천천히.'},
+        {name:'딥스',                           tip:'자체중량. 상체 앞으로 기울이면 가슴 자극.'},
+        {name:'스미스 머신 벤치 프레스',         tip:'안전하게 고중량 도전 가능.'},
+        {name:'덤벨 프레스',                    tip:'좌우 균형. 덤벨 내릴 때 가슴 스트레칭.'},
+        {name:'체스트 프레스',                  tip:'기계식. 초보자 안전하게 시작.'},
+        {name:'펙토럴 플라이',                  tip:'가슴 외측. 저중량 고반복.'},
+        {name:'팔굽혀펴기',                     tip:'맨몸 마무리. 번아웃 세트.'},
+    ]},
+    등:{col:'#3b82f6',emo:'🔙',exercises:[
+        {name:'데드 리프트',                    tip:'3대 운동. 등 펴고 힙힌지, 무릎 너무 굽히지 않기.'},
+        {name:'풀업',                           tip:'자체중량. 광배 수축 느끼며 천천히.'},
+        {name:'렛 풀 다운',                     tip:'광배 자극. 팔꿈치 옆으로, 바는 쇄골로.'},
+        {name:'시티드 로우',                    tip:'등 중앙. 팔꿈치 옆구리로, 어깨 내리기.'},
+        {name:'덤벨 로우',                      tip:'단방향. 등 중앙+광배 자극.'},
+    ]},
+    하체:{col:'#22c55e',emo:'🦵',exercises:[
+        {name:'스쿼트',                         tip:'3대 운동. 무릎이 발끝 방향, 허리 펴기.'},
+        {name:'데드 리프트',                    tip:'햄스트링+둔근. 힙힌지 필수.'},
+        {name:'레그 프레스',                    tip:'발 위치·높이로 자극 부위 변경.'},
+        {name:'V스쿼트',                        tip:'발 앞쪽 고정. 대퇴사두 집중.'},
+        {name:'이너싸이',                       tip:'내전근. 모을 때 강하게, 벌릴 때 천천히.'},
+        {name:'레그 익스텐션',                  tip:'대퇴사두 고립. 끝까지 쭉 차기.'},
+        {name:'라잉 레그 컬',                   tip:'햄스트링. 무릎 패드 위치 중요.'},
+        {name:'점프 스쿼트',                    tip:'마무리 플라이오. 착지 시 무릎 부드럽게.'},
+    ]},
+    팔:{col:'#f59e0b',emo:'💪',exercises:[
+        {name:'바벨 바이셉스 컬',               tip:'이두. 팔꿈치 고정, 상완 흔들지 않기.'},
+        {name:'스컬 크러셔',                    tip:'삼두. 팔꿈치 안쪽으로 모으기.'},
+        {name:'트러이셉스 푸시다운',            tip:'삼두 고립. 팔꿈치 몸통 고정.'},
+        {name:'풀업',                           tip:'이두 보조근 자극.'},
+        {name:'비하인드더백 바벨 리스트 컬',    tip:'전완근. 봉 잡고 손목만 올렸다 내리기.'},
+    ]},
 };
 
 function renderPPLAdvisor(){
     const sec=document.getElementById('ppl-advisor');
     if(!sec)return;
     const data=getData();
-    const col={밀기:'#ef4444',당기기:'#3b82f6',하체:'#22c55e'};
-    const emo={밀기:'💪',당기기:'🤜',하체:'🦵'};
+    const PARTS=['어깨','가슴','등','하체','팔'];
+    const col={어깨:'#a855f7',가슴:'#ef4444',등:'#3b82f6',하체:'#22c55e',팔:'#f59e0b'};
+    const emo={어깨:'🏔️',가슴:'💪',등:'🔙',하체:'🦵',팔:'🤜'};
 
     // 최근 7일 집계
-    const counts={밀기:0,당기기:0,하체:0};
-    const lastDone={밀기:null,당기기:null,하체:null};
+    const counts={어깨:0,가슴:0,등:0,하체:0,팔:0};
+    const lastDone={어깨:null,가슴:null,등:null,하체:null,팔:null};
     for(let i=6;i>=0;i--){
         const d=new Date(getKSTDate());d.setDate(d.getDate()-i);
         const ds=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().split('T')[0];
@@ -622,107 +635,92 @@ function renderPPLAdvisor(){
         });
     }
 
-    // 회복 상태
+    // 회복 상태 (48시간)
     const REST_DAYS=2;
     const resting={};
-    const availableForToday=[];
-    ['밀기','당기기','하체'].forEach(cat=>{
-        const daysAgo=lastDone[cat];
-        if(daysAgo===null||daysAgo>=REST_DAYS){resting[cat]=false;availableForToday.push(cat);}
+    const available=[];
+    PARTS.forEach(cat=>{
+        const d=lastDone[cat];
+        if(d===null||d>=REST_DAYS){resting[cat]=false;available.push(cat);}
         else resting[cat]=true;
     });
 
     // 추천 부위
     let rec=null,recReason='';
-    const allResting=availableForToday.length===0;
+    const allResting=available.length===0;
     if(!allResting){
-        availableForToday.sort((a,b)=>{
+        available.sort((a,b)=>{
             const da=lastDone[a]===null?999:lastDone[a];
             const db=lastDone[b]===null?999:lastDone[b];
             return db-da;
         });
-        rec=availableForToday[0];
+        rec=available[0];
         const days=lastDone[rec];
-        recReason=days===null?'최근 7일간 안 했어요!':
-            `마지막으로 한 지 ${days}일 지났어요 ✅`;
+        recReason=days===null?'최근 7일간 안 했어요!':`마지막으로 한 지 ${days}일 지났어요 ✅`;
     }else{
         const sorted=Object.entries(lastDone).filter(e=>e[1]!==null).sort((a,b)=>b[1]-a[1]);
-        rec=sorted[0]?.[0]||'밀기';
+        rec=sorted[0]?.[0]||'가슴';
         recReason='모든 부위 회복 중 — 오늘은 완전 휴식 추천 😴';
     }
 
-    // 내 기록에서 해당 PPL 운동 추출 (최근 기록 있는 것 위주)
-    function getMyExercises(pplCat){
-        const hist=getHistory();
-        const seen={};
-        // 전체 fit_data 뒤져서 해당 ppl 운동 수집
-        Object.entries(data).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([date,day])=>{
-            (day.workout||[]).forEach(w=>{
-                if(w.type!=='weight')return;
-                const p=classifyPPL(w);
-                if(p===pplCat&&!seen[w.name]){
-                    seen[w.name]={
-                        name:w.name,weight:w.weight,sets:w.sets,reps:w.reps,
-                        date:date,isNew:false
-                    };
-                }
-            });
-        });
-        return Object.values(seen).slice(0,5);
-    }
-
-    // 상태 태그
-    const statusTag=(cat)=>{
-        if(resting[cat])return `<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 5px;margin-left:4px;">💤 ${REST_DAYS-lastDone[cat]}일 남음</span>`;
-        if(lastDone[cat]===null)return `<span style="font-size:10px;background:var(--day-bg);color:var(--text-muted);border-radius:4px;padding:2px 5px;margin-left:4px;">미실시</span>`;
-        return `<span style="font-size:10px;background:#dcfce7;color:#166534;border-radius:4px;padding:2px 5px;margin-left:4px;">✅ 준비됨</span>`;
-    };
-
     sec.innerHTML=`<div class="card">
-        <h4 style="margin:0 0 14px;">🎯 오늘의 PPL 루틴 추천</h4>
-
+        <h4 style="margin:0 0 14px;">🎯 오늘의 추천 루틴</h4>
         ${allResting
             ?`<div style="background:#fef3c7;border-radius:12px;padding:14px;border-left:4px solid #f59e0b;margin-bottom:16px;">
                 <div style="font-size:18px;font-weight:900;color:#92400e;">😴 오늘은 휴식 추천!</div>
                 <div style="font-size:12px;color:#78350f;margin-top:4px;">모든 부위가 아직 48시간 회복 기간이에요.</div></div>`
             :`<div style="background:var(--day-bg);border-radius:12px;padding:14px;border-left:4px solid ${col[rec]};margin-bottom:16px;">
-                <div style="font-size:20px;font-weight:900;color:${col[rec]};">${emo[rec]} ${rec} 데이 추천!</div>
+                <div style="font-size:20px;font-weight:900;color:${col[rec]};">${emo[rec]} ${rec} 추천!</div>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${recReason}</div></div>`}
 
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">최근 7일 현황 · 클릭하면 운동 추천 ↓</div>
-        <div style="display:flex;gap:8px;margin-bottom:14px;">
-            ${['밀기','당기기','하체'].map(cat=>`
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">최근 7일 현황 · 탭하면 운동 목록 ↓</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px;">
+            ${PARTS.slice(0,3).map(cat=>`
             <button onclick="showPPLDetail('${cat}')"
-                style="flex:1;padding:10px 6px;border-radius:12px;border:2px solid ${resting[cat]?'#94a3b8':col[cat]};
+                style="padding:10px 4px;border-radius:12px;border:2px solid ${resting[cat]?'#94a3b8':col[cat]};
                 background:${resting[cat]?'var(--day-bg)':col[cat]+'22'};
                 color:${resting[cat]?'var(--text-muted)':col[cat]};
-                font-weight:900;font-size:13px;cursor:pointer;position:relative;">
+                font-weight:900;font-size:12px;cursor:pointer;">
                 ${emo[cat]} ${cat}<br>
-                <span style="font-size:10px;font-weight:normal;">${counts[cat]}회</span>
-                ${resting[cat]?`<span style="display:block;font-size:9px;color:#92400e;background:#fef3c7;border-radius:4px;padding:1px 4px;margin-top:2px;">💤 회복중</span>`
-                    :`<span style="display:block;font-size:9px;color:#166534;background:#dcfce7;border-radius:4px;padding:1px 4px;margin-top:2px;">✅ 준비됨</span>`}
+                <span style="font-size:10px;font-weight:normal;">${counts[cat]}회</span><br>
+                ${resting[cat]
+                    ?`<span style="font-size:9px;color:#92400e;background:#fef3c7;border-radius:4px;padding:1px 3px;">💤 회복중</span>`
+                    :`<span style="font-size:9px;color:#166534;background:#dcfce7;border-radius:4px;padding:1px 3px;">✅ 준비</span>`}
             </button>`).join('')}
         </div>
-
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+            ${PARTS.slice(3).map(cat=>`
+            <button onclick="showPPLDetail('${cat}')"
+                style="padding:10px 4px;border-radius:12px;border:2px solid ${resting[cat]?'#94a3b8':col[cat]};
+                background:${resting[cat]?'var(--day-bg)':col[cat]+'22'};
+                color:${resting[cat]?'var(--text-muted)':col[cat]};
+                font-weight:900;font-size:12px;cursor:pointer;">
+                ${emo[cat]} ${cat}<br>
+                <span style="font-size:10px;font-weight:normal;">${counts[cat]}회</span><br>
+                ${resting[cat]
+                    ?`<span style="font-size:9px;color:#92400e;background:#fef3c7;border-radius:4px;padding:1px 3px;">💤 회복중</span>`
+                    :`<span style="font-size:9px;color:#166534;background:#dcfce7;border-radius:4px;padding:1px 3px;">✅ 준비</span>`}
+            </button>`).join('')}
+        </div>
         <div id="ppl-detail-box"></div>
-
         <div style="font-size:11px;color:var(--text-muted);padding:8px;background:var(--day-bg);border-radius:8px;margin-top:4px;">
             💡 같은 부위는 <strong>48시간</strong> 후 다시 운동하세요.
         </div>
     </div>`;
 
-    // 기본으로 추천 부위 펼쳐서 보여주기
     if(rec) setTimeout(()=>showPPLDetail(rec),50);
 }
 
 window.showPPLDetail=function(cat){
     const box=document.getElementById('ppl-detail-box');
     if(!box)return;
-    const col={밀기:'#ef4444',당기기:'#3b82f6',하체:'#22c55e'};
+    const colMap={어깨:'#a855f7',가슴:'#ef4444',등:'#3b82f6',하체:'#22c55e',팔:'#f59e0b'};
+    const col=colMap[cat]||'var(--primary)';
     const data=getData();
     const hist=getHistory();
+    const courseEx=(COURSE_DATA[cat]?.exercises)||[];
 
-    // 내 기록에서 해당 PPL 운동 추출
+    // 내 기록에서 해당 부위 운동 추출 (최근 기록 우선)
     const mySeen={};
     Object.entries(data).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([date,day])=>{
         (day.workout||[]).forEach(w=>{
@@ -732,43 +730,53 @@ window.showPPLDetail=function(cat){
             }
         });
     });
-    const myList=Object.values(mySeen).slice(0,6);
 
-    // 기본 추천 중 내가 아직 안 해본 것
-    const defaults=PPL_DEFAULTS[cat]||[];
-    const newSuggestions=defaults.filter(d=>!mySeen[d.name]).slice(0,3);
+    // 코스 순서대로 표시 (내 기록 있으면 무게 표시, 없으면 NEW)
+    const courseItems=courseEx.map(ex=>{
+        const my=mySeen[ex.name]||hist[ex.name];
+        return {...ex,my};
+    });
+
+    // 코스에 없는 내 기록도 추가
+    const courseNames=new Set(courseEx.map(e=>e.name));
+    const extra=Object.values(mySeen).filter(m=>!courseNames.has(m.name));
 
     box.style.opacity='0';
     box.style.transform='translateY(-6px)';
     box.innerHTML=`
         <div style="border-top:2px dashed var(--border);margin-bottom:12px;"></div>
-        ${myList.length>0?`
-        <div style="font-size:12px;font-weight:bold;color:${col[cat]};margin-bottom:8px;">📋 내가 자주 하는 ${cat} 운동</div>
-        ${myList.map(ex=>`
-            <div style="display:flex;justify-content:space-between;align-items:center;
-                padding:10px 12px;background:var(--day-bg);border-radius:10px;margin-bottom:6px;
-                border-left:3px solid ${col[cat]};">
-                <div>
-                    <div style="font-weight:bold;font-size:14px;">${ex.name}</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
-                        최근 ${ex.date} · ${ex.weight}kg × ${ex.sets}세트 × ${ex.reps}회
-                    </div>
+        <div style="font-size:12px;font-weight:bold;color:${col};margin-bottom:10px;">🗂️ ${cat} 코스 (추천 순서)</div>
+        ${courseItems.map((ex,i)=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;
+            padding:11px 12px;background:var(--day-bg);border-radius:10px;margin-bottom:6px;
+            border-left:3px solid ${ex.my?col:'var(--border)'};">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">
+                    <span style="background:${col}22;color:${col};border-radius:4px;padding:1px 6px;font-weight:bold;">${i+1}</span>
                 </div>
-                <div style="font-size:11px;color:var(--text-muted);text-align:right;">
-                    추정 1RM<br><strong style="font-size:14px;color:${col[cat]};">${calc1RM(parseFloat(ex.weight),parseInt(ex.reps))}kg</strong>
+                <div style="font-weight:bold;font-size:14px;">${ex.name}
+                    ${!ex.my?'<span style="font-size:10px;color:var(--text-muted);background:var(--border);border-radius:4px;padding:1px 5px;margin-left:4px;">NEW</span>':''}
                 </div>
-            </div>`).join('')}`:''}
-
-        ${newSuggestions.length>0?`
-        <div style="font-size:12px;font-weight:bold;color:var(--text-muted);margin:12px 0 8px;">
-            ✨ 아직 안 해본 ${cat} 운동 추천
-        </div>
-        ${newSuggestions.map(ex=>`
-            <div style="padding:10px 12px;background:var(--day-bg);border-radius:10px;margin-bottom:6px;
-                border-left:3px dashed ${col[cat]};opacity:.85;">
-                <div style="font-weight:bold;font-size:13px;">${ex.name} <span style="font-size:10px;color:var(--text-muted);background:var(--border);border-radius:4px;padding:1px 5px;">NEW</span></div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">💬 ${ex.tip}</div>
-            </div>`).join('')}`:''}
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">💬 ${ex.tip}</div>
+                ${ex.my?`<div style="font-size:11px;color:${col};margin-top:3px;">
+                    최근 ${ex.my.date||''} · ${ex.my.weight}kg × ${ex.my.sets}세트 × ${ex.my.reps}회
+                </div>`:''}
+            </div>
+            ${ex.my?`<div style="text-align:right;flex-shrink:0;margin-left:10px;">
+                <div style="font-size:10px;color:var(--text-muted);">추정 1RM</div>
+                <strong style="font-size:15px;color:${col};">${calc1RM(parseFloat(ex.my.weight),parseInt(ex.my.reps))}kg</strong>
+            </div>`:''}
+        </div>`).join('')}
+        ${extra.length>0?`
+        <div style="font-size:12px;color:var(--text-muted);margin:12px 0 8px;">📌 기타 기록된 ${cat} 운동</div>
+        ${extra.map(ex=>`
+        <div style="padding:10px 12px;background:var(--day-bg);border-radius:10px;margin-bottom:6px;
+            border-left:3px dashed ${col};">
+            <div style="font-weight:bold;font-size:13px;">${ex.name}</div>
+            <div style="font-size:11px;color:${col};margin-top:2px;">
+                최근 ${ex.date} · ${ex.weight}kg × ${ex.sets}세트 × ${ex.reps}회
+            </div>
+        </div>`).join('')}`:''}
     `;
     requestAnimationFrame(()=>{
         box.style.transition='all .3s ease';
@@ -855,15 +863,7 @@ function renderWorkout(){
                 <input type="text" id="work-name" list="lib-list" placeholder="예: 렛 풀 다운" oninput="onWorkoutNameInput(this.value)" onchange="onWorkoutNameInput(this.value)">
                 <datalist id="lib-list">${lib.map(l=>`<option value="${l}">`).join('')}</datalist>
                 <div id="recent-hist-box"></div>
-                <label>PPL 분류 <span style="font-size:11px;color:var(--text-muted);">(처음 추가하는 운동은 직접 선택해주세요)</span></label>
-                <select id="work-ppl" style="border-color:var(--primary);">
-                    <option value="자동">🤖 자동 추정 (기존 운동)</option>
-                    <option value="밀기">💪 밀기 (가슴·어깨·삼두)</option>
-                    <option value="당기기">🤜 당기기 (등·이두)</option>
-                    <option value="하체">🦵 하체 (대퇴·햄스트링)</option>
-                    <option value="유산소">🏃 유산소</option>
-                    <option value="기타">⚙️ 기타 (PPL 무관)</option>
-                </select>
+                <div id="prev-weight-box"></div>
                 <label>중량 (kg)</label>
                 <input type="number" id="work-weight" placeholder="0" oninput="update1RM()">
                 <div style="display:flex;gap:10px;">
@@ -907,16 +907,26 @@ function renderWorkout(){
 
 window.onWorkoutNameInput=function(name){
     const hist=getHistory();
+    const prevBox=document.getElementById('prev-weight-box');
     if(hist[name]){
         const l=hist[name];
         document.getElementById('work-part').value=l.part;
         document.getElementById('work-weight').value=l.weight;
         document.getElementById('work-sets').value=l.sets;
         document.getElementById('work-reps').value=l.reps;
-        // PPL 자동완성: 저장된 값 있으면 세팅, 없으면 자동 추정 유지
-        const pplSel=document.getElementById('work-ppl');
-        if(pplSel) pplSel.value=l.ppl||'자동';
         update1RM();
+        // 이전 무게 강조 표시
+        if(prevBox){
+            prevBox.innerHTML=`<div style="background:var(--primary)11;border:1px solid var(--primary);border-radius:10px;padding:10px 14px;margin-top:6px;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-size:10px;color:var(--text-muted);">이전 기록</div>
+                    <div style="font-size:16px;font-weight:900;color:var(--primary);">${l.weight}kg <span style="font-size:12px;color:var(--text-muted);">× ${l.sets}세트 × ${l.reps}회</span></div>
+                </div>
+                <div style="font-size:20px;">📌</div>
+            </div>`;
+        }
+    }else{
+        if(prevBox)prevBox.innerHTML='';
     }
     // 최근 3회 기록 표시
     const records=getRecentRecords(name,3);
@@ -976,14 +986,20 @@ function saveWork(e){
         // PR 체크 (저장 전 기준)
         const prevMax=getPR(name);
         if(parseFloat(entry.weight)>prevMax&&prevMax>0)isPR=true;
-        // PPL 저장
-        const pplSel=document.getElementById('work-ppl');
-        const pplVal=pplSel?pplSel.value:'자동';
-        entry.ppl=pplVal;
-        // history 저장 (ppl 포함)
+        // history 저장 - 새 무게가 이전보다 크면 항상 업데이트
         const hist=getHistory();
-        hist[name]={part:entry.part,weight:entry.weight,sets:entry.sets,reps:entry.reps,ppl:pplVal};
-        localStorage.setItem('workout_history',JSON.stringify(hist));
+        const prevHist=hist[name];
+        const newWt=parseFloat(entry.weight)||0;
+        const prevWt=parseFloat(prevHist?.weight)||0;
+        if(!prevHist||newWt>prevWt){
+            hist[name]={part:entry.part,weight:entry.weight,sets:entry.sets,reps:entry.reps};
+            localStorage.setItem('workout_history',JSON.stringify(hist));
+            if(prevHist&&newWt>prevWt)showToast(`증량! ${prevWt}→${newWt}kg 🎉`,'💪');
+        }else{
+            // 무게 같거나 낮아도 세트/횟수는 업데이트
+            hist[name]={part:entry.part,weight:entry.weight,sets:entry.sets,reps:entry.reps};
+            localStorage.setItem('workout_history',JSON.stringify(hist));
+        }
     }else{
         entry.part='유산소';
         entry.time=document.getElementById('cardio-time').value;
@@ -1027,8 +1043,6 @@ window.editWorkoutItem=function(id){
         document.getElementById('work-weight').value=w.weight||'';
         document.getElementById('work-sets').value=w.sets||'';
         document.getElementById('work-reps').value=w.reps||'';
-        const pplSel=document.getElementById('work-ppl');
-        if(pplSel)pplSel.value=w.ppl||'자동';
         update1RM();
     }
     document.getElementById('work-memo').value=w.memo||'';
@@ -1047,6 +1061,117 @@ window.deleteWorkoutItem=function(id){
     saveData(data);renderActiveTab();
 };
 
+
+/* ==================================================
+   COURSE
+================================================== */
+function renderCourse(){
+    const content=document.getElementById('app-content');
+    const hist=getHistory();
+    const PARTS=['어깨','가슴','등','하체','팔'];
+    const col={어깨:'#a855f7',가슴:'#ef4444',등:'#3b82f6',하체:'#22c55e',팔:'#f59e0b'};
+    const emo={어깨:'🏔️',가슴:'💪',등:'🔙',하체:'🦵',팔:'🤜'};
+
+    content.innerHTML=`
+        <div class="card">
+            <h4 style="margin:0 0 4px;">🗂️ 부위별 운동 코스</h4>
+            <div style="font-size:12px;color:var(--text-muted);">부위를 탭하면 운동 순서와 이전 기록을 확인할 수 있어요</div>
+        </div>
+        <div class="course-grid">
+            ${PARTS.slice(0,4).map(cat=>`
+            <div class="course-card" id="ccard-${cat}"
+                style="background:${col[cat]}18;color:${col[cat]};"
+                onclick="toggleCourse('${cat}')">
+                <div style="font-size:32px;">${emo[cat]}</div>
+                <div style="font-size:16px;font-weight:900;margin-top:6px;">${cat}</div>
+                <div style="font-size:11px;opacity:.7;margin-top:2px;">${(COURSE_DATA[cat]?.exercises||[]).length}가지 운동</div>
+            </div>`).join('')}
+        </div>
+        <div style="padding:0 0 12px;">
+            <div class="course-card" id="ccard-팔"
+                style="background:${col['팔']}18;color:${col['팔']};max-width:200px;margin:0 auto;"
+                onclick="toggleCourse('팔')">
+                <div style="font-size:32px;">${emo['팔']}</div>
+                <div style="font-size:16px;font-weight:900;margin-top:6px;">팔</div>
+                <div style="font-size:11px;opacity:.7;margin-top:2px;">${(COURSE_DATA['팔']?.exercises||[]).length}가지 운동</div>
+            </div>
+        </div>
+        <div id="course-detail"></div>`;
+}
+
+window.toggleCourse=function(cat){
+    const detail=document.getElementById('course-detail');
+    const colMap={어깨:'#a855f7',가슴:'#ef4444',등:'#3b82f6',하체:'#22c55e',팔:'#f59e0b'};
+    const col=colMap[cat];
+    const hist=getHistory();
+    const data=getData();
+    const courseEx=(COURSE_DATA[cat]?.exercises)||[];
+
+    // 부위별 내 기록 추출
+    const mySeen={};
+    Object.entries(data).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([date,day])=>{
+        (day.workout||[]).forEach(w=>{
+            if(w.type!=='weight')return;
+            if(classifyPPL(w)===cat&&!mySeen[w.name]){
+                mySeen[w.name]={name:w.name,weight:w.weight,sets:w.sets,reps:w.reps,date:date.slice(5)};
+            }
+        });
+    });
+
+    const courseItems=courseEx.map(ex=>{
+        const my=mySeen[ex.name]||hist[ex.name];
+        return {...ex,my};
+    });
+    const courseNames=new Set(courseEx.map(e=>e.name));
+    const extra=Object.values(mySeen).filter(m=>!courseNames.has(m.name));
+
+    // 카드 활성화 표시
+    document.querySelectorAll('.course-card').forEach(c=>c.classList.remove('active'));
+    document.getElementById('ccard-'+cat)?.classList.add('active');
+
+    detail.style.opacity='0';
+    detail.innerHTML=`
+        <div class="card">
+            <h4 style="margin:0 0 14px;color:${col};">${COURSE_DATA[cat]?.emo||''} ${cat} 코스</h4>
+            ${courseItems.map((ex,i)=>{
+                const wt=ex.my?parseFloat(ex.my.weight):0;
+                const rp=ex.my?parseInt(ex.my.reps):0;
+                const orm=wt&&rp?calc1RM(wt,rp):0;
+                return `<div class="course-list-item" style="--course-col:${col};">
+                    <div style="flex:1;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="background:${col};color:#fff;border-radius:50%;width:22px;height:22px;
+                                display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;flex-shrink:0;">${i+1}</span>
+                            <span style="font-weight:bold;font-size:15px;">${ex.name}</span>
+                            ${!ex.my?'<span style="font-size:10px;color:var(--text-muted);background:var(--border);border-radius:4px;padding:1px 5px;">NEW</span>':''}
+                        </div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:30px;">💬 ${ex.tip}</div>
+                        ${ex.my?`<div style="font-size:12px;color:${col};margin-top:4px;padding-left:30px;">
+                            📅 ${ex.my.date||''} · <strong>${ex.my.weight}kg</strong> × ${ex.my.sets}세트 × ${ex.my.reps}회
+                        </div>`:'<div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:30px;">아직 기록 없음</div>'}
+                    </div>
+                    ${orm?`<div style="text-align:right;flex-shrink:0;margin-left:10px;">
+                        <div style="font-size:9px;color:var(--text-muted);">추정 1RM</div>
+                        <div style="font-size:16px;font-weight:900;color:${col};">${orm}kg</div>
+                    </div>`:''}
+                </div>`;
+            }).join('')}
+            ${extra.length>0?`
+            <div style="font-size:12px;color:var(--text-muted);margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--border);">📌 기타 기록된 ${cat} 운동</div>
+            ${extra.map(ex=>`
+            <div class="course-list-item" style="--course-col:${col};opacity:.8;">
+                <div style="flex:1;">
+                    <div style="font-weight:bold;font-size:14px;">${ex.name}</div>
+                    <div style="font-size:12px;color:${col};margin-top:3px;">
+                        📅 ${ex.date} · <strong>${ex.weight}kg</strong> × ${ex.sets}세트 × ${ex.reps}회
+                    </div>
+                </div>
+            </div>`).join('')}`:''
+            }
+        </div>`;
+    requestAnimationFrame(()=>{detail.style.transition='opacity .3s';detail.style.opacity='1';});
+    detail.scrollIntoView({behavior:'smooth',block:'start'});
+};
 
 /* ==================================================
    HISTORY
