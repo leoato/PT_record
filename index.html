@@ -276,6 +276,25 @@ button.primary{
 }
 
 /* ===================================================
+   QUICK LOG SHEET (하단 슬라이드업)
+=================================================== */
+#quick-log-overlay{
+    display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+    background:rgba(0,0,0,0.5);z-index:300;
+}
+#quick-log-overlay.show{display:block;}
+#quick-log-sheet{
+    position:fixed;bottom:0;left:0;width:100%;z-index:301;
+    background:var(--card);border-radius:24px 24px 0 0;
+    padding:20px 20px calc(20px + env(safe-area-inset-bottom));
+    border-top:2px solid var(--primary);box-shadow:var(--glow);
+    transform:translateY(100%);transition:transform .35s cubic-bezier(.32,1,.6,1);
+    max-height:85vh;overflow-y:auto;
+}
+#quick-log-sheet.show{transform:translateY(0);}
+.ql-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px;}
+
+/* ===================================================
    TOAST NOTIFICATION
 =================================================== */
 #toast{
@@ -309,6 +328,13 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
         <button class="nav-btn" data-tab="graph">📈 분석</button>
         <button class="nav-btn" data-tab="mgmt">⚙️ 설정</button>
     </nav>
+</div>
+
+<!-- Quick Log Sheet -->
+<div id="quick-log-overlay" onclick="closeQuickLog()"></div>
+<div id="quick-log-sheet">
+    <div class="ql-handle"></div>
+    <div id="quick-log-content"></div>
 </div>
 
 <!-- Toast -->
@@ -1137,7 +1163,9 @@ window.toggleCourse=function(cat){
                 const wt=ex.my?parseFloat(ex.my.weight):0;
                 const rp=ex.my?parseInt(ex.my.reps):0;
                 const orm=wt&&rp?calc1RM(wt,rp):0;
-                return `<div class="course-list-item" style="--course-col:${col};">
+                const exData=encodeURIComponent(JSON.stringify({name:ex.name,part:cat,weight:ex.my?.weight||'',sets:ex.my?.sets||'',reps:ex.my?.reps||'',col}));
+                return `<div class="course-list-item" style="--course-col:${col};cursor:pointer;active:opacity(.7);"
+                    onclick="openQuickLog('${exData}')">
                     <div style="flex:1;">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <span style="background:${col};color:#fff;border-radius:50%;width:22px;height:22px;
@@ -1150,27 +1178,148 @@ window.toggleCourse=function(cat){
                             📅 ${ex.my.date||''} · <strong>${ex.my.weight}kg</strong> × ${ex.my.sets}세트 × ${ex.my.reps}회
                         </div>`:'<div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:30px;">아직 기록 없음</div>'}
                     </div>
-                    ${orm?`<div style="text-align:right;flex-shrink:0;margin-left:10px;">
-                        <div style="font-size:9px;color:var(--text-muted);">추정 1RM</div>
-                        <div style="font-size:16px;font-weight:900;color:${col};">${orm}kg</div>
-                    </div>`:''}
+                    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:10px;">
+                        ${orm?`<div style="text-align:right;">
+                            <div style="font-size:9px;color:var(--text-muted);">추정 1RM</div>
+                            <div style="font-size:16px;font-weight:900;color:${col};">${orm}kg</div>
+                        </div>`:''}
+                        <div style="font-size:22px;color:${col};opacity:.7;">＋</div>
+                    </div>
                 </div>`;
             }).join('')}
             ${extra.length>0?`
             <div style="font-size:12px;color:var(--text-muted);margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--border);">📌 기타 기록된 ${cat} 운동</div>
             ${extra.map(ex=>`
-            <div class="course-list-item" style="--course-col:${col};opacity:.8;">
+            <div class="course-list-item" style="--course-col:${col};opacity:.8;cursor:pointer;"
+                onclick="openQuickLog(encodeURIComponent(JSON.stringify({name:ex.name,part:cat,weight:ex.weight,sets:ex.sets,reps:ex.reps,col})))">
                 <div style="flex:1;">
                     <div style="font-weight:bold;font-size:14px;">${ex.name}</div>
                     <div style="font-size:12px;color:${col};margin-top:3px;">
                         📅 ${ex.date} · <strong>${ex.weight}kg</strong> × ${ex.sets}세트 × ${ex.reps}회
                     </div>
                 </div>
+                <div style="font-size:22px;color:${col};opacity:.7;margin-left:10px;">＋</div>
             </div>`).join('')}`:''
             }
         </div>`;
     requestAnimationFrame(()=>{detail.style.transition='opacity .3s';detail.style.opacity='1';});
     detail.scrollIntoView({behavior:'smooth',block:'start'});
+};
+
+// ─── 빠른 기록 시트 ──────────────────────────────────────
+window.openQuickLog=function(encodedData){
+    const ex=JSON.parse(decodeURIComponent(encodedData));
+    const col=ex.col||'var(--primary)';
+    const hist=getHistory();
+    const saved=hist[ex.name]||{};
+    // history에서 최신 값 우선 사용
+    const w=saved.weight||ex.weight||'';
+    const s=saved.sets||ex.sets||'';
+    const r=saved.reps||ex.reps||'';
+
+    document.getElementById('quick-log-content').innerHTML=`
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);">${window.currentDate} 기록</div>
+                <div style="font-size:20px;font-weight:900;color:${col};margin-top:2px;">${ex.name}</div>
+                ${w?`<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">이전: ${w}kg × ${s}세트 × ${r}회</div>`:'<div style="font-size:12px;color:var(--text-muted);">첫 기록이에요!</div>'}
+            </div>
+            <button onclick="closeQuickLog()" style="background:var(--day-bg);border:none;border-radius:8px;padding:6px 12px;color:var(--text-muted);font-size:13px;cursor:pointer;">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);">중량 (kg)</label>
+                <input type="number" id="ql-weight" value="${w}" placeholder="0"
+                    style="border-color:${col};font-size:18px;font-weight:bold;text-align:center;margin-top:4px;"
+                    oninput="qlUpdate1RM('${col}')">
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);">세트</label>
+                <input type="number" id="ql-sets" value="${s}" placeholder="3"
+                    style="font-size:18px;font-weight:bold;text-align:center;margin-top:4px;">
+            </div>
+            <div>
+                <label style="font-size:12px;color:var(--text-muted);">횟수</label>
+                <input type="number" id="ql-reps" value="${r}" placeholder="10"
+                    style="font-size:18px;font-weight:bold;text-align:center;margin-top:4px;"
+                    oninput="qlUpdate1RM('${col}')">
+            </div>
+        </div>
+        <div id="ql-orm" style="text-align:center;font-size:13px;color:var(--text-muted);margin-bottom:10px;min-height:20px;"></div>
+        <label style="font-size:12px;color:var(--text-muted);">메모 (선택)</label>
+        <textarea id="ql-memo" rows="2" placeholder="자세 포인트, 느낌 등..." style="margin-top:4px;font-size:14px;"></textarea>
+        <button onclick="saveQuickLog('${ex.name}','${ex.part}','${col}')"
+            style="width:100%;padding:16px;background:linear-gradient(135deg,${col}cc,${col});
+            color:#fff;border:none;border-radius:12px;font-weight:bold;font-size:16px;
+            margin-top:14px;cursor:pointer;letter-spacing:.5px;">
+            ✅ 오늘 기록 저장
+        </button>`;
+
+    document.getElementById('quick-log-overlay').classList.add('show');
+    setTimeout(()=>document.getElementById('quick-log-sheet').classList.add('show'),10);
+    // 1RM 초기 계산
+    qlUpdate1RM(col);
+    // 중량 입력칸 포커스
+    setTimeout(()=>document.getElementById('ql-weight')?.focus(),400);
+};
+
+window.closeQuickLog=function(){
+    document.getElementById('quick-log-sheet').classList.remove('show');
+    document.getElementById('quick-log-overlay').classList.remove('show');
+};
+
+window.qlUpdate1RM=function(col){
+    const w=parseFloat(document.getElementById('ql-weight')?.value);
+    const r=parseInt(document.getElementById('ql-reps')?.value);
+    const box=document.getElementById('ql-orm');
+    if(!box)return;
+    if(w&&r&&w>0&&r>0){
+        const orm=calc1RM(w,r);
+        box.innerHTML=`추정 1RM: <strong style="color:${col};font-size:15px;">${orm}kg</strong>`;
+    }else box.innerHTML='';
+};
+
+window.saveQuickLog=function(name,part,col){
+    const weight=document.getElementById('ql-weight')?.value;
+    const sets=document.getElementById('ql-sets')?.value;
+    const reps=document.getElementById('ql-reps')?.value;
+    const memo=document.getElementById('ql-memo')?.value||'';
+    if(!weight||!sets||!reps){showToast('중량·세트·횟수를 입력해주세요','⚠️');return;}
+
+    const ds=window.currentDate;
+    const data=getData();
+    if(!data[ds])data[ds]={};
+    if(!data[ds].workout)data[ds].workout=[];
+
+    // PR 체크
+    const prevMax=getPR(name);
+    const isPR=parseFloat(weight)>prevMax&&prevMax>0;
+
+    const entry={id:'W'+Date.now(),type:'weight',name,part,weight,sets,reps,memo};
+    data[ds].workout.push(entry);
+    saveData(data);
+
+    // workout_lib 업데이트
+    const lib=getLib();
+    if(!lib.includes(name)){lib.push(name);localStorage.setItem('workout_lib',JSON.stringify(lib));}
+
+    // history 업데이트 (증량 시)
+    const hist=getHistory();
+    const prevWt=parseFloat(hist[name]?.weight)||0;
+    const newWt=parseFloat(weight);
+    hist[name]={part,weight,sets,reps};
+    localStorage.setItem('workout_history',JSON.stringify(hist));
+
+    closeQuickLog();
+
+    if(isPR){showPR(name,weight);}
+    else if(newWt>prevWt&&prevWt>0){showToast(`증량! ${prevWt}→${newWt}kg`,'💪');}
+    else{showToast(`${name} 기록 완료!`);}
+
+    // 현재 탭이 코스면 재렌더 안 해도 됨 (기록만 저장)
+    // 홈 탭이면 요약 갱신
+    const activeTab=document.querySelector('.nav-btn.active')?.dataset.tab;
+    if(activeTab==='dash')renderActiveTab();
 };
 
 /* ==================================================
