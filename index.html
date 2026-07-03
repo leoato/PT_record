@@ -307,6 +307,32 @@ button.primary{
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 body[data-theme="hell"] #toast{background:#3d0a0a;border:1px solid var(--primary);}
 body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primary);}
+
+/* ===================================================
+   REST TIMER (세트 간 휴식)
+=================================================== */
+#rest-timer{
+    position:fixed;bottom:calc(85px + env(safe-area-inset-bottom));left:50%;
+    transform:translateX(-50%) translateY(200%);
+    width:calc(100% - 30px);max-width:420px;
+    background:var(--card);border:2px solid var(--primary);border-radius:16px;
+    padding:12px 16px;z-index:400;
+    box-shadow:var(--shadow),var(--glow);
+    transition:transform .35s cubic-bezier(.32,1,.6,1);
+}
+#rest-timer.show{transform:translateX(-50%) translateY(0);}
+#rest-timer-fill{height:100%;background:linear-gradient(90deg,var(--secondary),var(--primary));border-radius:6px;transition:width 1s linear;}
+
+/* ===================================================
+   TIMETABLE (운동 시간표)
+=================================================== */
+.tt-grid{display:grid;grid-template-columns:32px repeat(7,1fr);gap:2px;}
+.tt-cell{min-height:22px;border-radius:4px;}
+.tt-head{font-size:11px;font-weight:bold;text-align:center;color:var(--text-muted);min-height:18px;line-height:18px;}
+.tt-hour{font-size:9px;color:var(--text-muted);text-align:right;padding-right:4px;line-height:22px;}
+.tt-slot{background:var(--day-bg);border:1px solid var(--border);cursor:pointer;transition:background .15s;}
+.tt-slot.on{background:var(--primary);border-color:var(--primary);box-shadow:var(--glow);}
+.tt-slot.today-col:not(.on){background:var(--input-bg);border-color:var(--primary)44;}
     </style>
 </head>
 
@@ -323,7 +349,7 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
     <nav class="bottom-nav">
         <button class="nav-btn active" data-tab="dash">🗓️ 홈</button>
         <button class="nav-btn" data-tab="workout">🏋️ 운동</button>
-        <button class="nav-btn" data-tab="course">🗂️ 코스</button>
+        <button class="nav-btn" data-tab="course">📋 루틴</button>
         <button class="nav-btn" data-tab="history">📜 기록</button>
         <button class="nav-btn" data-tab="graph">📈 분석</button>
         <button class="nav-btn" data-tab="mgmt">⚙️ 설정</button>
@@ -339,6 +365,23 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
 
 <!-- Toast -->
 <div id="toast"></div>
+
+<!-- Rest Timer (세트 간 휴식 타이머) -->
+<div id="rest-timer">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:20px;">⏱️</span>
+            <strong id="rest-timer-display" style="font-size:24px;color:var(--primary);font-variant-numeric:tabular-nums;">0:00</strong>
+        </div>
+        <div style="display:flex;gap:6px;">
+            <button class="btn-sm" style="background:var(--day-bg);color:var(--text);border:1px solid var(--border);" onclick="addRestTime(30)">+30초</button>
+            <button class="btn-sm btn-del" onclick="stopRestTimer()">종료</button>
+        </div>
+    </div>
+    <div style="background:var(--border);border-radius:6px;height:6px;margin-top:10px;overflow:hidden;">
+        <div id="rest-timer-fill" style="width:100%;"></div>
+    </div>
+</div>
 
 <!-- PR Modal -->
 <div id="pr-modal">
@@ -487,7 +530,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         const map={
             dash:['성장 캘린더',renderDashboard],
             workout:['운동 기록',renderWorkout],
-            course:['운동 코스',renderCourse],
+            course:['운동 루틴',renderRoutine],
             history:['전체 기록',renderHistory],
             graph:['변화 분석',renderGraphs],
             mgmt:['설정 및 관리',renderManagement],
@@ -517,6 +560,7 @@ function renderDashboard(){
     const streak=calcStreak();
 
     content.innerHTML=`
+        <div id="diet-banner"></div>
         ${streak>0?`<div class="streak-banner">
             <div style="font-size:40px;">🔥</div>
             <div><div style="font-size:20px;font-weight:900;">${streak}일 연속 운동 중!</div>
@@ -530,12 +574,17 @@ function renderDashboard(){
             </div>
             <div class="calendar" id="main-cal"></div>
         </div>
+        <div id="today-routine-card"></div>
+        <div id="protein-card"></div>
         <div id="day-summary"></div>
-        <div id="ppl-advisor"></div>`;
+        <div id="diet-rules"></div>`;
 
     renderCalendar(y,m);
+    renderDietBanner();
+    renderTodayRoutineCard(window.currentDate);
+    renderProteinCard(window.currentDate);
     renderDaySummary(window.currentDate);
-    renderPPLAdvisor();
+    renderDietRules();
 }
 
 function renderCalendar(y,m){
@@ -1212,17 +1261,19 @@ window.openQuickLog=function(encodedData){
     const col=ex.col||'var(--primary)';
     const hist=getHistory();
     const saved=hist[ex.name]||{};
-    // history에서 최신 값 우선 사용
+    // history에서 최신 값 우선 사용 (루틴에서 열면 세트/횟수는 루틴 값 고정)
     const w=saved.weight||ex.weight||'';
-    const s=saved.sets||ex.sets||'';
-    const r=saved.reps||ex.reps||'';
+    const s=ex.routineSets||saved.sets||ex.sets||'';
+    const r=ex.routineReps||saved.reps||ex.reps||'';
+    const prevS=saved.sets||ex.sets||s;
+    const prevR=saved.reps||ex.reps||r;
 
     document.getElementById('quick-log-content').innerHTML=`
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
             <div>
                 <div style="font-size:11px;color:var(--text-muted);">${window.currentDate} 기록</div>
                 <div style="font-size:20px;font-weight:900;color:${col};margin-top:2px;">${ex.name}</div>
-                ${w?`<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">이전: ${w}kg × ${s}세트 × ${r}회</div>`:'<div style="font-size:12px;color:var(--text-muted);">첫 기록이에요!</div>'}
+                ${w?`<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">이전: ${w}kg × ${prevS}세트 × ${prevR}회</div>`:'<div style="font-size:12px;color:var(--text-muted);">첫 기록이에요! 12회 가능한 무게로 시작</div>'}
             </div>
             <button onclick="closeQuickLog()" style="background:var(--day-bg);border:none;border-radius:8px;padding:6px 12px;color:var(--text-muted);font-size:13px;cursor:pointer;">✕</button>
         </div>
@@ -1246,6 +1297,13 @@ window.openQuickLog=function(encodedData){
             </div>
         </div>
         <div id="ql-orm" style="text-align:center;font-size:13px;color:var(--text-muted);margin-bottom:10px;min-height:20px;"></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">
+            <span style="font-size:11px;color:var(--text-muted);flex-shrink:0;">⏱️ 세트 휴식</span>
+            <button type="button" class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);" onclick="startRestTimer(60)">1:00</button>
+            <button type="button" class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);" onclick="startRestTimer(90)">1:30</button>
+            <button type="button" class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);" onclick="startRestTimer(120)">2:00</button>
+            <button type="button" class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);" onclick="startRestTimer(180)">3:00</button>
+        </div>
         <label style="font-size:12px;color:var(--text-muted);">메모 (선택)</label>
         <textarea id="ql-memo" rows="2" placeholder="자세 포인트, 느낌 등..." style="margin-top:4px;font-size:14px;"></textarea>
         <button onclick="saveQuickLog('${ex.name}','${ex.part}','${col}')"
@@ -1316,10 +1374,9 @@ window.saveQuickLog=function(name,part,col){
     else if(newWt>prevWt&&prevWt>0){showToast(`증량! ${prevWt}→${newWt}kg`,'💪');}
     else{showToast(`${name} 기록 완료!`);}
 
-    // 현재 탭이 코스면 재렌더 안 해도 됨 (기록만 저장)
-    // 홈 탭이면 요약 갱신
+    // 홈/루틴 탭이면 체크 상태 갱신을 위해 재렌더
     const activeTab=document.querySelector('.nav-btn.active')?.dataset.tab;
-    if(activeTab==='dash')renderActiveTab();
+    if(activeTab==='dash'||activeTab==='course')renderActiveTab();
 };
 
 /* ==================================================
@@ -1706,7 +1763,7 @@ function renderManagement(){
 window.applyTheme=applyTheme;
 
 function getBackupData(){
-    const keys=['fit_data','workout_lib','workout_history','food_presets'];
+    const keys=['fit_data','workout_lib','workout_history','food_presets','workout_schedule'];
     const b={};keys.forEach(k=>b[k]=JSON.parse(localStorage.getItem(k)||'{}'));
     return JSON.stringify(b,null,2);
 }
@@ -1753,6 +1810,433 @@ window.clearData=function(){
     }
 };
 window.renderManagement=renderManagement;
+
+/* ==================================================
+   71일 다이어트 프로그램 (2026-07-06 ~ 2026-09-14)
+   - 주 6일 운동 (일요일 휴식)
+   - 월화수목금토 = 밀기/당기기/다리/밀기/당기기/다리
+   - 12회 가능한 무게 / 메인 4세트 · 보조 3세트
+   - 매일 마지막 천국의 계단 20분 고정
+   - 단백질 하루 120g, 4회 분할
+================================================== */
+const DIET_PLAN={start:'2026-07-06',end:'2026-09-14',totalDays:71,proteinGoal:120,proteinSplit:4};
+const ROUTINE_REPS=12;
+const FIXED_CARDIO={name:'천국의 계단',time:20};
+
+const ROUTINE_TYPES={
+    push:{label:'밀기',emo:'🫸',col:'#ef4444',exercises:[
+        {name:'펙토럴 플라이',part:'가슴',main:true},
+        {name:'벤치 프레스',part:'가슴',main:true},
+        {name:'덤벨 프레스',part:'가슴',main:true},
+        {name:'체스트 프레스',part:'가슴',main:true},
+        {name:'사레레(사이드레터럴레이즈)',part:'어깨',main:false},
+        {name:'트러이셉스 푸시다운',part:'팔',main:false,label:'삼두'},
+    ]},
+    pull:{label:'당기기',emo:'🫷',col:'#3b82f6',exercises:[
+        {name:'풀업',part:'등',main:true},
+        {name:'데드 리프트',part:'등',main:true},
+        {name:'바벨 로우',part:'등',main:true},
+        {name:'렛 풀 다운',part:'등',main:true},
+        {name:'시티드 로우',part:'등',main:true},
+        {name:'사레레(사이드레터럴레이즈)',part:'어깨',main:false},
+        {name:'바벨 바이셉스 컬',part:'팔',main:false,label:'이두'},
+    ]},
+    legs:{label:'다리',emo:'🦵',col:'#22c55e',exercises:[
+        {name:'힙 어브덕션',part:'하체',main:false},
+        {name:'이너싸이',part:'하체',main:false,label:'어덕션'},
+        {name:'스쿼트',part:'하체',main:true},
+        {name:'레그 프레스',part:'하체',main:true},
+        {name:'레그 익스텐션',part:'하체',main:true},
+        {name:'라잉 레그 컬',part:'하체',main:true},
+    ]},
+    rest:{label:'휴식',emo:'😴',col:'#94a3b8',exercises:[]},
+};
+// getDay(): 0=일,1=월...6=토
+const WEEK_ROUTINE=['rest','push','pull','legs','push','pull','legs'];
+
+function weekdayOf(ds){const p=ds.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]).getDay();}
+function getRoutineKey(ds){return WEEK_ROUTINE[weekdayOf(ds)];}
+function dietStatus(ds){
+    const t=new Date(ds),d0=new Date(DIET_PLAN.start),d1=new Date(DIET_PLAN.end);
+    const day=Math.floor((t-d0)/86400000)+1;
+    const dday=Math.round((d1-t)/86400000);
+    return{day,dday,active:day>=1&&dday>=0,before:day<1,after:dday<0};
+}
+
+/* ─── D-day 배너 ─────────────────────────────── */
+function renderDietBanner(){
+    const el=document.getElementById('diet-banner');if(!el)return;
+    const st=dietStatus(getKSTDate());
+    if(st.after){el.innerHTML='';return;}
+    const pct=st.before?0:Math.min(100,Math.round(st.day/DIET_PLAN.totalDays*100));
+    el.innerHTML=`<div class="card" style="background:linear-gradient(135deg,var(--secondary),var(--primary));color:#fff;border:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="font-size:12px;opacity:.85;">🔥 71일 다이어트 챌린지</div>
+                <div style="font-size:24px;font-weight:900;margin-top:2px;">${st.before?`시작까지 ${1-st.day}일`:`${st.day}일차 / ${DIET_PLAN.totalDays}일`}</div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:26px;font-weight:900;">D-${Math.max(st.dday,0)}</div>
+                <div style="font-size:11px;opacity:.85;">${DIET_PLAN.end.replace(/-/g,'.')} 종료</div>
+            </div>
+        </div>
+        <div style="background:rgba(255,255,255,.25);border-radius:10px;height:10px;margin-top:12px;overflow:hidden;">
+            <div style="background:#fff;height:100%;width:${pct}%;border-radius:10px;transition:width .5s;"></div>
+        </div>
+        <div style="font-size:11px;opacity:.85;margin-top:6px;text-align:right;">${pct}% 진행</div>
+    </div>`;
+}
+
+/* ─── 오늘의 루틴 카드 (홈) ─────────────────────── */
+function hoursToRanges(hours){
+    if(!hours||hours.length===0)return'';
+    const h=[...hours].sort((a,b)=>a-b);
+    const ranges=[];let s=h[0],p=h[0];
+    for(let i=1;i<=h.length;i++){
+        if(h[i]===p+1){p=h[i];continue;}
+        ranges.push(`${s}:00~${p+1}:00`);s=h[i];p=h[i];
+    }
+    return ranges.join(', ');
+}
+function getSchedule(){return JSON.parse(localStorage.getItem('workout_schedule')||'{}');}
+
+function renderTodayRoutineCard(ds){
+    const el=document.getElementById('today-routine-card');if(!el)return;
+    const key=getRoutineKey(ds);
+    const rt=ROUTINE_TYPES[key];
+    const day=getData()[ds]||{};
+    const doneNames=new Set((day.workout||[]).filter(w=>w.type==='weight').map(w=>w.name));
+    const doneCnt=rt.exercises.filter(e=>doneNames.has(e.name)).length;
+    const cardioDone=(day.workout||[]).some(w=>w.type==='cardio'&&(w.name||'').includes('계단'));
+    const timeStr=hoursToRanges(getSchedule()[String(weekdayOf(ds))]);
+    if(key==='rest'){
+        el.innerHTML=`<div class="card" style="text-align:center;">
+            <div style="font-size:34px;">😴</div>
+            <div style="font-weight:900;font-size:17px;margin-top:4px;">오늘은 휴식일! (일요일)</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">잘 먹고 잘 자는 것도 운동입니다. 단백질 120g은 오늘도 챙기기! 🥩</div>
+        </div>`;return;
+    }
+    el.innerHTML=`<div class="card" style="border-left:4px solid ${rt.col};">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);">오늘의 루틴</div>
+                <div style="font-size:20px;font-weight:900;color:${rt.col};">${rt.emo} ${rt.label} DAY</div>
+                ${timeStr?`<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">⏰ 운동 가능 시간: <strong>${timeStr}</strong></div>`:''}
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:22px;font-weight:900;color:${doneCnt>=rt.exercises.length?'var(--success)':rt.col};">${doneCnt}/${rt.exercises.length}</div>
+                <div style="font-size:10px;color:var(--text-muted);">유산소 ${cardioDone?'✅':'⬜'}</div>
+            </div>
+        </div>
+        <button class="primary" style="margin-top:12px;padding:12px;" onclick="goToRoutineTab()">📋 오늘 루틴 시작하기 →</button>
+    </div>`;
+}
+window.goToRoutineTab=function(){
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelector('[data-tab="course"]').classList.add('active');
+    renderActiveTab();
+};
+
+/* ─── 다이어트 수칙 카드 ─────────────────────────── */
+function renderDietRules(){
+    const el=document.getElementById('diet-rules');if(!el)return;
+    const open=localStorage.getItem('rules_open')!=='0';
+    const rules=[
+        '🏋️ 하루에 무조건 1번 운동 (일요일만 휴식, 주 6일)',
+        '⏱️ 운동 90분 + 유산소(천국의 계단) 20분',
+        '🔢 무게는 12회 가능한 무게 / 메인 4세트 · 보조 3세트',
+        '🥩 단백질 하루 120g — 4번 나눠서 섭취',
+        '🚫 금지 음식 리스트에 있는 건 먹지 않기 (사진 참고)',
+        '🍺 술자리에서는 제로콜라! 안주 많이 먹지 않기',
+        '💪 술자리가 있어도 운동은 절대 거르지 않기',
+    ];
+    el.innerHTML=`<div class="card">
+        <h4 style="margin:0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleRules()">
+            <span>📜 다이어트 7계명</span><span style="color:var(--text-muted);font-size:14px;">${open?'▲':'▼'}</span>
+        </h4>
+        ${open?`<div style="margin-top:10px;">${rules.map(r=>`<div style="padding:8px 10px;background:var(--day-bg);border-radius:8px;margin-bottom:6px;font-size:13px;">${r}</div>`).join('')}</div>`:''}
+    </div>`;
+}
+window.toggleRules=function(){
+    localStorage.setItem('rules_open',localStorage.getItem('rules_open')==='0'?'1':'0');
+    renderDietRules();
+};
+
+/* ─── 단백질 기록 (하루 120g / 4회 분할) ─────────── */
+window.addProtein=function(ds,g){
+    g=Math.round(parseFloat(g)*10)/10;
+    if(!g||g<=0){showToast('그램 수를 입력해주세요','⚠️');return;}
+    const data=getData();
+    if(!data[ds])data[ds]={};
+    if(!data[ds].protein)data[ds].protein=[];
+    const n=new Date();
+    data[ds].protein.push({id:'P'+Date.now(),g,t:`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`});
+    saveData(data);
+    const total=data[ds].protein.reduce((s,p)=>s+p.g,0);
+    if(total>=DIET_PLAN.proteinGoal)showToast(`단백질 목표 달성! ${total}g 🎉`,'🥩');
+    else showToast(`+${g}g (${total}/${DIET_PLAN.proteinGoal}g)`,'🥩');
+    renderProteinCard(ds);
+};
+window.addProteinCustom=function(ds){
+    addProtein(ds,document.getElementById('protein-custom')?.value);
+};
+window.deleteProtein=function(ds,id){
+    const data=getData();
+    if(!data[ds]?.protein)return;
+    data[ds].protein=data[ds].protein.filter(p=>p.id!==id);
+    saveData(data);renderProteinCard(ds);
+};
+function renderProteinCard(ds){
+    const el=document.getElementById('protein-card');if(!el)return;
+    const log=(getData()[ds]||{}).protein||[];
+    const total=Math.round(log.reduce((s,p)=>s+p.g,0)*10)/10;
+    const goal=DIET_PLAN.proteinGoal;
+    const per=Math.round(goal/DIET_PLAN.proteinSplit);
+    const pct=Math.min(100,Math.round(total/goal*100));
+    el.innerHTML=`<div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h4 style="margin:0;">🥩 단백질 섭취</h4>
+            <strong style="color:${total>=goal?'var(--success)':'var(--primary)'};font-size:16px;">${total} / ${goal}g</strong>
+        </div>
+        <div style="background:var(--border);border-radius:10px;height:14px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;border-radius:10px;transition:width .5s;background:linear-gradient(90deg,var(--secondary),${total>=goal?'var(--success)':'var(--primary)'});"></div>
+        </div>
+        <div style="display:flex;gap:6px;margin:12px 0;">
+            ${[0,1,2,3].map(i=>`<div style="flex:1;text-align:center;padding:8px 2px;border-radius:10px;font-size:11px;font-weight:bold;
+                background:${i<log.length?'var(--primary)':'var(--day-bg)'};color:${i<log.length?'#fff':'var(--text-muted)'};">
+                ${i<log.length?'✅':(i+1)+'회차'}</div>`).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">💡 하루 ${goal}g을 ${DIET_PLAN.proteinSplit}번에 나눠서 (1회 약 ${per}g)</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <button class="btn-sm" style="background:var(--primary);color:#fff;padding:10px 14px;flex-shrink:0;" onclick="addProtein('${ds}',${per})">+${per}g</button>
+            <button class="btn-sm" style="background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:10px 14px;flex-shrink:0;" onclick="addProtein('${ds}',20)">+20g</button>
+            <input type="number" id="protein-custom" placeholder="직접 g" style="flex:1;margin:0;padding:9px;font-size:14px;min-width:0;">
+            <button class="btn-sm" style="background:var(--secondary);color:#fff;padding:10px 14px;flex-shrink:0;" onclick="addProteinCustom('${ds}')">추가</button>
+        </div>
+        ${log.length>0?`<div style="margin-top:10px;">
+            ${log.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--day-bg);border-radius:8px;margin-bottom:5px;font-size:13px;">
+                <span><strong>${p.g}g</strong> <span style="color:var(--text-muted);font-size:11px;">${p.t||''}</span></span>
+                <button class="btn-sm btn-del" onclick="deleteProtein('${ds}','${p.id}')">삭제</button>
+            </div>`).join('')}
+        </div>`:''}
+    </div>`;
+}
+
+/* ─── 루틴 탭 (오늘 루틴 / 주간 계획 / 시간표) ────── */
+function renderRoutine(){
+    const content=document.getElementById('app-content');
+    content.innerHTML=`
+        <div class="tab-group">
+            <button class="tab-option active" onclick="switchRoutineTab('today',this)">📋 오늘 루틴</button>
+            <button class="tab-option" onclick="switchRoutineTab('week',this)">🗓️ 주간 계획</button>
+            <button class="tab-option" onclick="switchRoutineTab('time',this)">⏰ 시간표</button>
+        </div>
+        <div id="routine-content"></div>`;
+    renderTodayRoutine();
+}
+window.switchRoutineTab=function(tab,btn){
+    document.querySelectorAll('.tab-option').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    if(tab==='today')renderTodayRoutine();
+    else if(tab==='week')renderWeekPlan();
+    else renderTimetable();
+};
+
+function renderTodayRoutine(){
+    const gc=document.getElementById('routine-content');if(!gc)return;
+    const ds=window.currentDate;
+    const key=getRoutineKey(ds);
+    const rt=ROUTINE_TYPES[key];
+    const st=dietStatus(ds);
+    const day=getData()[ds]||{};
+    const workouts=day.workout||[];
+    const doneNames=new Set(workouts.filter(w=>w.type==='weight').map(w=>w.name));
+    const cardioDone=workouts.some(w=>w.type==='cardio'&&(w.name||'').includes('계단'));
+    const hist=getHistory();
+
+    if(key==='rest'){
+        gc.innerHTML=`<div class="card" style="text-align:center;padding:40px 20px;">
+            <div style="font-size:60px;">😴</div>
+            <h3 style="margin:10px 0 6px;">일요일은 완전 휴식!</h3>
+            <p style="color:var(--text-muted);font-size:13px;">근육은 쉴 때 자랍니다.<br>단백질 120g은 오늘도 꼭 챙기세요 🥩</p>
+        </div>`;return;
+    }
+
+    const doneCnt=rt.exercises.filter(e=>doneNames.has(e.name)).length;
+    const pct=Math.round((doneCnt+(cardioDone?1:0))/(rt.exercises.length+1)*100);
+
+    gc.innerHTML=`
+        <div class="card" style="border-left:4px solid ${rt.col};">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-size:11px;color:var(--text-muted);">${ds}${st.active?` · 다이어트 ${st.day}일차`:''}</div>
+                    <div style="font-size:22px;font-weight:900;color:${rt.col};">${rt.emo} ${rt.label} DAY</div>
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:24px;font-weight:900;color:${pct===100?'var(--success)':rt.col};">${pct}%</div>
+                    <div style="font-size:10px;color:var(--text-muted);">완료율</div>
+                </div>
+            </div>
+            <div style="background:var(--border);border-radius:8px;height:8px;margin-top:10px;overflow:hidden;">
+                <div style="height:100%;width:${pct}%;background:${rt.col};border-radius:8px;transition:width .5s;"></div>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">💡 12회 가능한 무게 · 메인 4세트 / 보조 3세트 · 총 90분 + 유산소 20분</div>
+        </div>
+        ${rt.exercises.map((ex,i)=>{
+            const done=doneNames.has(ex.name);
+            const my=hist[ex.name];
+            const sets=ex.main?4:3;
+            const orm=my?calc1RM(parseFloat(my.weight),parseInt(my.reps)):0;
+            const exData=encodeURIComponent(JSON.stringify({name:ex.name,part:ex.part,weight:my?my.weight:'',col:rt.col,routineSets:String(sets),routineReps:String(ROUTINE_REPS)}));
+            return `<div class="course-list-item" style="--course-col:${done?'var(--success)':rt.col};cursor:pointer;${done?'opacity:.6;':''}"
+                onclick="openQuickLog('${exData}')">
+                <div style="flex:1;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="background:${done?'var(--success)':rt.col};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;flex-shrink:0;">${done?'✓':i+1}</span>
+                        <span style="font-weight:bold;font-size:15px;${done?'text-decoration:line-through;':''}">${ex.name}${ex.label?` <span style="font-size:11px;color:var(--text-muted);">(${ex.label})</span>`:''}</span>
+                    </div>
+                    <div style="font-size:11px;margin-top:4px;padding-left:30px;">
+                        <span style="background:${ex.main?rt.col+'22':'var(--border)'};color:${ex.main?rt.col:'var(--text-muted)'};border-radius:4px;padding:1px 6px;font-weight:bold;">${ex.main?'메인 4세트':'보조 3세트'} × ${ROUTINE_REPS}회</span>
+                    </div>
+                    ${my?`<div style="font-size:11px;color:${rt.col};margin-top:4px;padding-left:30px;">📌 이전: ${my.weight}kg × ${my.sets}세트 × ${my.reps}회</div>`
+                        :'<div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:30px;">아직 기록 없음 — 12회 가능한 무게로!</div>'}
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:10px;">
+                    ${orm?`<div style="text-align:right;"><div style="font-size:9px;color:var(--text-muted);">추정 1RM</div><div style="font-size:15px;font-weight:900;color:${rt.col};">${orm}kg</div></div>`:''}
+                    <div style="font-size:22px;color:${done?'var(--success)':rt.col};opacity:.7;">${done?'✅':'＋'}</div>
+                </div>
+            </div>`;
+        }).join('')}
+        <div class="course-list-item" style="--course-col:${cardioDone?'var(--success)':'#f59e0b'};${cardioDone?'opacity:.6;':''}">
+            <div style="flex:1;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:18px;">🏃</span>
+                    <span style="font-weight:bold;font-size:15px;${cardioDone?'text-decoration:line-through;':''}">천국의 계단 20분</span>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:26px;">매일 운동 마지막 고정 유산소</div>
+            </div>
+            <button class="btn-sm" style="background:${cardioDone?'var(--success)':'#f59e0b'};color:#fff;padding:10px 14px;flex-shrink:0;" onclick="logFixedCardio()">${cardioDone?'✅ 완료':'기록하기'}</button>
+        </div>
+        <div class="card">
+            <h5 style="margin:0 0 8px;">⏱️ 세트 간 휴식 타이머</h5>
+            <div style="display:flex;gap:8px;">
+                <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:12px;" onclick="startRestTimer(60)">1:00</button>
+                <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:12px;" onclick="startRestTimer(90)">1:30</button>
+                <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:12px;" onclick="startRestTimer(120)">2:00</button>
+                <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:12px;" onclick="startRestTimer(180)">3:00</button>
+            </div>
+        </div>`;
+}
+
+window.logFixedCardio=function(){
+    const ds=window.currentDate;
+    const data=getData();
+    if(!data[ds])data[ds]={};
+    if(!data[ds].workout)data[ds].workout=[];
+    if(data[ds].workout.some(w=>w.type==='cardio'&&(w.name||'').includes('계단'))){showToast('이미 오늘 유산소 완료!','🏃');return;}
+    data[ds].workout.push({id:'W'+Date.now(),type:'cardio',name:FIXED_CARDIO.name,part:'유산소',time:String(FIXED_CARDIO.time),dist:'',memo:'루틴 고정 유산소'});
+    saveData(data);
+    const lib=getLib();
+    if(!lib.includes(FIXED_CARDIO.name)){lib.push(FIXED_CARDIO.name);localStorage.setItem('workout_lib',JSON.stringify(lib));}
+    showToast('천국의 계단 20분 완료!','🏃');
+    renderTodayRoutine();
+};
+
+function renderWeekPlan(){
+    const gc=document.getElementById('routine-content');if(!gc)return;
+    const names=['일','월','화','수','목','금','토'];
+    const todayW=weekdayOf(getKSTDate());
+    gc.innerHTML=`<div class="card">
+        <h4 style="margin:0 0 12px;">🗓️ 주간 루틴 (주 6일 · 일요일 휴식)</h4>
+        ${[1,2,3,4,5,6,0].map(w=>{
+            const rt=ROUTINE_TYPES[WEEK_ROUTINE[w]];
+            const isToday=w===todayW;
+            return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--day-bg);border-radius:12px;margin-bottom:8px;border-left:4px solid ${rt.col};${isToday?'outline:2px solid '+rt.col+';':''}">
+                <div style="width:34px;height:34px;border-radius:50%;background:${rt.col}22;color:${rt.col};display:flex;align-items:center;justify-content:center;font-weight:900;flex-shrink:0;">${names[w]}</div>
+                <div style="flex:1;">
+                    <div style="font-weight:900;color:${rt.col};">${rt.emo} ${rt.label}${isToday?` <span style="font-size:10px;background:${rt.col};color:#fff;border-radius:4px;padding:1px 6px;">오늘</span>`:''}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${rt.exercises.length>0?rt.exercises.map(e=>e.label||e.name.split('(')[0]).join(' · ')+' + 계단 20분':'완전 휴식'}</div>
+                </div>
+            </div>`;
+        }).join('')}
+        <div style="font-size:11px;color:var(--text-muted);padding:8px;background:var(--day-bg);border-radius:8px;">💡 무게는 12회 가능한 무게 · 메인 4세트 / 보조 3세트 · 90분 + 유산소 20분</div>
+    </div>`;
+}
+
+/* ─── 운동 시간표 (에타 스타일) ──────────────────── */
+function renderTimetable(){
+    const gc=document.getElementById('routine-content');if(!gc)return;
+    const sched=getSchedule();
+    const dayNames=['월','화','수','목','금','토','일'];
+    const order=[1,2,3,4,5,6,0];
+    const todayW=weekdayOf(getKSTDate());
+    let hoursHtml='';
+    for(let h=6;h<=23;h++){
+        hoursHtml+=`<div class="tt-cell tt-hour">${h}</div>`;
+        hoursHtml+=order.map(w=>{
+            const on=(sched[String(w)]||[]).includes(h);
+            return `<div class="tt-cell tt-slot${on?' on':''}${w===todayW?' today-col':''}" onclick="toggleScheduleCell(${w},${h})"></div>`;
+        }).join('');
+    }
+    gc.innerHTML=`<div class="card">
+        <h4 style="margin:0 0 4px;">⏰ 운동 시간표</h4>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">운동 가능한 시간 칸을 탭해서 표시하세요. 홈 화면 '오늘의 루틴' 카드에 오늘 시간이 표시됩니다.</div>
+        <div class="tt-grid">
+            <div class="tt-cell tt-head"></div>
+            ${order.map((w,i)=>`<div class="tt-cell tt-head" style="${w===todayW?'color:var(--primary);':''}">${dayNames[i]}</div>`).join('')}
+            ${hoursHtml}
+        </div>
+    </div>`;
+}
+window.toggleScheduleCell=function(w,h){
+    const sched=getSchedule();
+    const key=String(w);
+    if(!sched[key])sched[key]=[];
+    const idx=sched[key].indexOf(h);
+    if(idx>=0)sched[key].splice(idx,1);else sched[key].push(h);
+    localStorage.setItem('workout_schedule',JSON.stringify(sched));
+    renderTimetable();
+};
+
+/* ─── 세트 간 휴식 타이머 ────────────────────────── */
+let _restLeft=0,_restTotal=0,_restInterval=null;
+function fmtRestTime(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function updateRestUI(){
+    const d=document.getElementById('rest-timer-display');
+    const f=document.getElementById('rest-timer-fill');
+    if(d)d.textContent=fmtRestTime(_restLeft);
+    if(f)f.style.width=Math.max(0,_restLeft/_restTotal*100)+'%';
+}
+window.startRestTimer=function(sec){
+    _restLeft=sec;_restTotal=sec;
+    document.getElementById('rest-timer').classList.add('show');
+    updateRestUI();
+    clearInterval(_restInterval);
+    _restInterval=setInterval(()=>{
+        _restLeft--;
+        if(_restLeft<=0){finishRestTimer();return;}
+        updateRestUI();
+    },1000);
+};
+window.addRestTime=function(s){if(_restInterval){_restLeft+=s;_restTotal+=s;updateRestUI();}};
+window.stopRestTimer=function(){
+    clearInterval(_restInterval);_restInterval=null;
+    document.getElementById('rest-timer').classList.remove('show');
+};
+function finishRestTimer(){
+    stopRestTimer();
+    showToast('휴식 끝! 다음 세트 가자 💪','🔔');
+    if(navigator.vibrate)navigator.vibrate([200,100,200,100,400]);
+    try{
+        const ctx=new (window.AudioContext||window.webkitAudioContext)();
+        [0,0.25,0.5].forEach((t,i)=>{
+            const o=ctx.createOscillator(),g=ctx.createGain();
+            o.connect(g);g.connect(ctx.destination);
+            o.frequency.value=i===2?1320:880;g.gain.value=0.3;
+            o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.18);
+        });
+    }catch(e){}
+}
 
 /* ==================================================
    SERVICE WORKER
