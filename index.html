@@ -313,14 +313,15 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
 =================================================== */
 #rest-timer{
     position:fixed;bottom:calc(85px + env(safe-area-inset-bottom));left:50%;
-    transform:translateX(-50%) translateY(200%);
+    transform:translateX(-50%) translateY(40px);
+    opacity:0;visibility:hidden;pointer-events:none;
     width:calc(100% - 30px);max-width:420px;
     background:var(--card);border:2px solid var(--primary);border-radius:16px;
     padding:12px 16px;z-index:400;
     box-shadow:var(--shadow),var(--glow);
-    transition:transform .35s cubic-bezier(.32,1,.6,1);
+    transition:transform .35s cubic-bezier(.32,1,.6,1),opacity .3s,visibility .3s;
 }
-#rest-timer.show{transform:translateX(-50%) translateY(0);}
+#rest-timer.show{transform:translateX(-50%) translateY(0);opacity:1;visibility:visible;pointer-events:auto;}
 #rest-timer-fill{height:100%;background:linear-gradient(90deg,var(--secondary),var(--primary));border-radius:6px;transition:width 1s linear;}
 
 /* ===================================================
@@ -333,6 +334,12 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
 .tt-slot{background:var(--day-bg);border:1px solid var(--border);cursor:pointer;transition:background .15s;}
 .tt-slot.on{background:var(--primary);border-color:var(--primary);box-shadow:var(--glow);}
 .tt-slot.today-col:not(.on){background:var(--input-bg);border-color:var(--primary)44;}
+
+/* ===================================================
+   SPINNER (사진 분석 로딩)
+=================================================== */
+@keyframes spin{to{transform:rotate(360deg);}}
+.spinner{width:36px;height:36px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto;}
     </style>
 </head>
 
@@ -1743,6 +1750,42 @@ function renderManagement(){
         </div>
 
         <div class="card">
+            <h3 style="margin:0 0 10px;">🤖 Gemini API 키 (사진 분석)</h3>
+            <div style="padding:12px;background:var(--day-bg);border-radius:10px;font-size:13px;margin-bottom:12px;">
+                ${localStorage.getItem('gemini_api_key')?'✅ 키 저장됨 — 홈 화면에서 📷 사진 분석 사용 가능':'⬜ 미설정 — 사진으로 단백질 분석하려면 키가 필요해요'}
+            </div>
+            <input type="password" id="gemini-key-input" placeholder="AIza로 시작하는 API 키" value="${localStorage.getItem('gemini_api_key')||''}">
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button class="btn-sm" style="flex:1;background:var(--primary);color:#fff;padding:12px;" onclick="saveGeminiKey()">저장</button>
+                <button class="btn-sm btn-del" style="flex:1;padding:12px;" onclick="clearGeminiKey()">삭제</button>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6;">
+                📌 발급 방법: <strong>aistudio.google.com</strong> 접속 → 구글 로그인 → "Get API key" → 키 복사 (무료)<br>
+                🔒 키는 <strong>이 기기의 localStorage에만</strong> 저장돼요. 백업 파일이나 GitHub 코드에는 절대 포함되지 않습니다.
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin:0 0 10px;">🔔 알림 설정</h3>
+            <div id="notify-status" style="padding:12px;background:var(--day-bg);border-radius:10px;font-size:13px;margin-bottom:12px;">
+                ${!('Notification'in window)
+                    ?'⚠️ 이 브라우저는 알림을 지원하지 않아요. <br><span style="font-size:11px;color:var(--text-muted);">아이폰은 <strong>iOS 16.4+</strong> 에서 <strong>홈 화면에 추가</strong>한 앱으로 열어야 알림이 지원됩니다.</span>'
+                    :Notification.permission==='granted'
+                        ?'✅ 알림 허용됨 — 휴식 타이머가 끝나면 iOS 알림이 울립니다.'
+                        :Notification.permission==='denied'
+                            ?'🚫 알림이 차단되어 있어요.<br><span style="font-size:11px;color:var(--text-muted);">설정 → Safari(또는 앱 이름) → 알림에서 허용으로 변경해주세요.</span>'
+                            :'⬜ 아직 알림 권한을 요청하지 않았어요.'}
+            </div>
+            ${('Notification'in window)&&Notification.permission==='default'
+                ?'<button class="primary" style="margin-top:0;" onclick="requestNotifyPermission()">🔔 알림 권한 허용하기</button>':''}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6;">
+                💡 <strong>매일 "오늘 운동" 알림</strong>은 웹앱 단독으로는 예약이 불가능해요 (푸시 서버 필요).<br>
+                대신 아이폰 <strong>단축어 → 자동화</strong>로 요일별 알림을 만들면 확실합니다.
+                예: 월요일 오후 5시 → "🫸 오늘은 밀기 DAY!" 알림 + 이 앱 열기.
+            </div>
+        </div>
+
+        <div class="card">
             <h3 style="margin:0 0 5px;">💾 데이터 백업
                 <span style="font-size:11px;color:var(--primary);font-weight:normal;"> (최근: ${lastBackup})</span>
             </h3>
@@ -1963,16 +2006,18 @@ window.toggleRules=function(){
 };
 
 /* ─── 단백질 기록 (하루 120g / 4회 분할) ─────────── */
-window.addProtein=function(ds,g){
+window.addProtein=function(ds,g,name){
     g=Math.round(parseFloat(g)*10)/10;
     if(!g||g<=0){showToast('그램 수를 입력해주세요','⚠️');return;}
     const data=getData();
     if(!data[ds])data[ds]={};
     if(!data[ds].protein)data[ds].protein=[];
     const n=new Date();
-    data[ds].protein.push({id:'P'+Date.now(),g,t:`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`});
+    const item={id:'P'+Date.now(),g,t:`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`};
+    if(name)item.name=name;
+    data[ds].protein.push(item);
     saveData(data);
-    const total=data[ds].protein.reduce((s,p)=>s+p.g,0);
+    const total=Math.round(data[ds].protein.reduce((s,p)=>s+p.g,0)*10)/10;
     if(total>=DIET_PLAN.proteinGoal)showToast(`단백질 목표 달성! ${total}g 🎉`,'🥩');
     else showToast(`+${g}g (${total}/${DIET_PLAN.proteinGoal}g)`,'🥩');
     renderProteinCard(ds);
@@ -1986,6 +2031,52 @@ window.deleteProtein=function(ds,id){
     data[ds].protein=data[ds].protein.filter(p=>p.id!==id);
     saveData(data);renderProteinCard(ds);
 };
+
+/* 프리셋 (food_presets 재활용 — 배열 형태로 사용) */
+function getProteinPresets(){
+    let p=null;
+    try{p=JSON.parse(localStorage.getItem('food_presets')||'null');}catch(e){}
+    if(!Array.isArray(p)){
+        p=[
+            {name:'닭가슴살 1팩',g:25},
+            {name:'WPI 쉐이크',g:30},
+            {name:'우유 200ml',g:6},
+            {name:'계란 2개',g:12},
+        ];
+        localStorage.setItem('food_presets',JSON.stringify(p));
+    }
+    return p;
+}
+window.togglePresetEdit=function(){
+    window._presetEdit=!window._presetEdit;
+    window._presetAddOpen=false;
+    renderProteinCard(window.currentDate);
+};
+window.togglePresetAdd=function(){
+    window._presetAddOpen=!window._presetAddOpen;
+    window._presetEdit=false;
+    renderProteinCard(window.currentDate);
+    if(window._presetAddOpen)setTimeout(()=>document.getElementById('preset-name')?.focus(),50);
+};
+window.savePreset=function(){
+    const name=(document.getElementById('preset-name')?.value||'').trim();
+    const g=Math.round(parseFloat(document.getElementById('preset-g')?.value)*10)/10;
+    if(!name||!g||g<=0){showToast('이름과 g을 입력해주세요','⚠️');return;}
+    const p=getProteinPresets();
+    p.push({name,g});
+    localStorage.setItem('food_presets',JSON.stringify(p));
+    window._presetAddOpen=false;
+    showToast(`프리셋 추가: ${name} ${g}g`,'🍗');
+    renderProteinCard(window.currentDate);
+};
+window.deleteProteinPreset=function(i){
+    const p=getProteinPresets();
+    if(!confirm(`'${p[i]?.name}' 프리셋을 삭제할까요?`))return;
+    p.splice(i,1);
+    localStorage.setItem('food_presets',JSON.stringify(p));
+    renderProteinCard(window.currentDate);
+};
+
 function renderProteinCard(ds){
     const el=document.getElementById('protein-card');if(!el)return;
     const log=(getData()[ds]||{}).protein||[];
@@ -1993,6 +2084,8 @@ function renderProteinCard(ds){
     const goal=DIET_PLAN.proteinGoal;
     const per=Math.round(goal/DIET_PLAN.proteinSplit);
     const pct=Math.min(100,Math.round(total/goal*100));
+    const presets=getProteinPresets();
+    const edit=!!window._presetEdit;
     el.innerHTML=`<div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
             <h4 style="margin:0;">🥩 단백질 섭취</h4>
@@ -2006,21 +2099,161 @@ function renderProteinCard(ds){
                 background:${i<log.length?'var(--primary)':'var(--day-bg)'};color:${i<log.length?'#fff':'var(--text-muted)'};">
                 ${i<log.length?'✅':(i+1)+'회차'}</div>`).join('')}
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">💡 하루 ${goal}g을 ${DIET_PLAN.proteinSplit}번에 나눠서 (1회 약 ${per}g)</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">🍗 프리셋 — 탭 한 번으로 기록${edit?' · <strong style="color:var(--danger);">삭제할 항목을 탭하세요</strong>':''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            ${presets.map((p,i)=>{
+                const safeName=(p.name||'').replace(/['"\\<>]/g,'');
+                return `<button class="btn-sm" style="background:${edit?'var(--danger)':'var(--day-bg)'};color:${edit?'#fff':'var(--text)'};border:1px solid ${edit?'var(--danger)':'var(--border)'};padding:9px 12px;"
+                    onclick="${edit?`deleteProteinPreset(${i})`:`addProtein('${ds}',${p.g},'${safeName}')`}">${edit?'✕ ':''}${safeName} <strong style="color:${edit?'#fff':'var(--primary)'};">${p.g}g</strong></button>`;
+            }).join('')}
+            <button class="btn-sm" style="background:var(--day-bg);color:var(--primary);border:1px dashed var(--primary);padding:9px 12px;" onclick="togglePresetAdd()">＋추가</button>
+            <button class="btn-sm" style="background:var(--day-bg);color:var(--text-muted);border:1px solid var(--border);padding:9px 12px;" onclick="togglePresetEdit()">${edit?'완료':'✏️'}</button>
+        </div>
+        ${window._presetAddOpen?`<div style="display:flex;gap:6px;margin-bottom:10px;">
+            <input type="text" id="preset-name" placeholder="음식 이름" style="flex:2;margin:0;padding:9px;font-size:14px;min-width:0;">
+            <input type="number" id="preset-g" placeholder="g" style="flex:1;margin:0;padding:9px;font-size:14px;min-width:0;">
+            <button class="btn-sm" style="background:var(--primary);color:#fff;flex-shrink:0;" onclick="savePreset()">저장</button>
+        </div>`:''}
         <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn-sm" style="background:var(--primary);color:#fff;padding:10px 14px;flex-shrink:0;" onclick="addProtein('${ds}',${per})">+${per}g</button>
             <button class="btn-sm" style="background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:10px 14px;flex-shrink:0;" onclick="addProtein('${ds}',20)">+20g</button>
             <input type="number" id="protein-custom" placeholder="직접 g" style="flex:1;margin:0;padding:9px;font-size:14px;min-width:0;">
             <button class="btn-sm" style="background:var(--secondary);color:#fff;padding:10px 14px;flex-shrink:0;" onclick="addProteinCustom('${ds}')">추가</button>
         </div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn-sm" style="flex:2;background:var(--primary);color:#fff;padding:12px;font-size:13px;"
+                onclick="document.getElementById('protein-photo-cam').click()">📷 카메라로 단백질 분석</button>
+            <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--primary);border:1px solid var(--primary);padding:12px;font-size:13px;"
+                onclick="document.getElementById('protein-photo-lib').click()">🖼️ 앨범</button>
+        </div>
+        <input type="file" id="protein-photo-cam" accept="image/*" capture="environment" style="display:none;" onchange="analyzeFoodPhoto(this,'${ds}')">
+        <input type="file" id="protein-photo-lib" accept="image/*" style="display:none;" onchange="analyzeFoodPhoto(this,'${ds}')">
         ${log.length>0?`<div style="margin-top:10px;">
             ${log.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--day-bg);border-radius:8px;margin-bottom:5px;font-size:13px;">
-                <span><strong>${p.g}g</strong> <span style="color:var(--text-muted);font-size:11px;">${p.t||''}</span></span>
+                <span><strong>${p.g}g</strong>${p.name?` ${p.name}`:''} <span style="color:var(--text-muted);font-size:11px;">${p.t||''}</span></span>
                 <button class="btn-sm btn-del" onclick="deleteProtein('${ds}','${p.id}')">삭제</button>
             </div>`).join('')}
         </div>`:''}
     </div>`;
 }
+
+/* ─── 사진 단백질 분석 (Gemini API) ─────────────── */
+function openPhotoLoadingSheet(){
+    document.getElementById('quick-log-content').innerHTML=`
+        <div style="text-align:center;padding:30px 0;">
+            <div class="spinner"></div>
+            <div style="margin-top:16px;font-weight:bold;font-size:16px;">🔍 Gemini가 분석 중...</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">보통 3~5초 걸려요</div>
+        </div>`;
+    document.getElementById('quick-log-overlay').classList.add('show');
+    setTimeout(()=>document.getElementById('quick-log-sheet').classList.add('show'),10);
+}
+function resizeImageToBase64(file,maxSize){
+    return new Promise((resolve,reject)=>{
+        const img=new Image();
+        const url=URL.createObjectURL(file);
+        img.onload=()=>{
+            const scale=Math.min(1,maxSize/Math.max(img.width,img.height));
+            const c=document.createElement('canvas');
+            c.width=Math.round(img.width*scale);
+            c.height=Math.round(img.height*scale);
+            c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+            URL.revokeObjectURL(url);
+            resolve(c.toDataURL('image/jpeg',0.85).split(',')[1]);
+        };
+        img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지 읽기 실패'));};
+        img.src=url;
+    });
+}
+/* 모델 폴백 체인: 한도 소진(429)이나 일시 오류 시 자동으로 다음 모델 시도 */
+const GEMINI_MODELS=['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash'];
+async function callGeminiWithFallback(key,body){
+    // 마지막에 성공했던 모델부터 시도 (한도 아낌)
+    const pref=localStorage.getItem('gemini_model_pref');
+    const models=pref&&GEMINI_MODELS.includes(pref)
+        ?[pref,...GEMINI_MODELS.filter(m=>m!==pref)]
+        :[...GEMINI_MODELS];
+    let lastErr=null;
+    for(const model of models){
+        let res;
+        try{
+            res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(key),{
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body
+            });
+        }catch(e){
+            throw new Error('네트워크 오류 — 인터넷 연결을 확인해주세요'); // 네트워크 문제는 모델 바꿔도 소용없음
+        }
+        if(res.ok){
+            localStorage.setItem('gemini_model_pref',model);
+            return {data:await res.json(),model,fellBack:model!==models[0]};
+        }
+        if(res.status===400||res.status===403){
+            throw new Error('API 키를 확인해주세요 ('+res.status+')'); // 키 문제도 모델 바꿔도 소용없음
+        }
+        // 429(한도 소진)·404(모델 없음)·500·503(일시 오류) → 다음 모델로
+        lastErr=new Error(model+' 실패 ('+res.status+(res.status===429?' 한도 소진':'')+')');
+    }
+    throw new Error('모든 모델 시도 실패 — '+(lastErr?lastErr.message:'')+' 잠시 후 다시 시도해주세요');
+}
+
+window.analyzeFoodPhoto=async function(input,ds){
+    const file=input.files[0];
+    input.value='';
+    if(!file)return;
+    const key=localStorage.getItem('gemini_api_key')||'';
+    if(!key){showToast('설정 탭에서 Gemini API 키를 먼저 등록하세요','🔑');return;}
+    openPhotoLoadingSheet();
+    try{
+        const b64=await resizeImageToBase64(file,768);
+        const prompt='사진 속 음식을 보고 총 단백질 함량(g)을 추정해줘. 양(인분/그램)도 사진에서 최대한 추정할 것. 반드시 아래 JSON 형식만 출력하고 다른 텍스트는 절대 쓰지 마.\n{"food":"음식 이름(한국어)","protein_g":숫자,"note":"양 추정 근거 한 줄(한국어)"}';
+        const body=JSON.stringify({contents:[{parts:[
+            {text:prompt},
+            {inline_data:{mime_type:'image/jpeg',data:b64}}
+        ]}]});
+        const {data,model,fellBack}=await callGeminiWithFallback(key,body);
+        if(fellBack)showToast('한도 초과로 '+model+'(으)로 전환했어요','🔄');
+        const text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+        const clean=text.replace(/```json|```/g,'').trim();
+        const r=JSON.parse(clean);
+        renderPhotoResult(r,ds,model);
+    }catch(e){
+        closeQuickLog();
+        showToast('분석 실패: '+(e.message||'네트워크 오류'),'⚠️');
+    }
+};
+function renderPhotoResult(r,ds,model){
+    const g=Math.round((parseFloat(r.protein_g)||0)*10)/10;
+    window._photoFood=(r.food||'사진 분석').replace(/['"\\<>]/g,'');
+    document.getElementById('quick-log-content').innerHTML=`
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);">🔍 분석 결과${model?` · <span style="opacity:.7;">${model}</span>`:''}</div>
+                <div style="font-size:20px;font-weight:900;color:var(--primary);margin-top:2px;">${window._photoFood}</div>
+                ${r.note?`<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">💬 ${r.note}</div>`:''}
+            </div>
+            <button onclick="closeQuickLog()" style="background:var(--day-bg);border:none;border-radius:8px;padding:6px 12px;color:var(--text-muted);font-size:13px;cursor:pointer;">✕</button>
+        </div>
+        <label style="font-size:12px;color:var(--text-muted);">단백질 (g) — 필요하면 수정하세요</label>
+        <input type="number" id="photo-g" value="${g}" step="0.5"
+            style="font-size:20px;font-weight:bold;text-align:center;margin-top:4px;border-color:var(--primary);">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">⚠️ AI 추정치라 오차가 있어요. 포장 음식이면 영양성분표가 더 정확합니다.</div>
+        <button class="primary" style="margin-top:14px;" onclick="logPhotoProtein('${ds}',false)">🥩 기록하기</button>
+        <button class="primary" style="margin-top:8px;background:var(--card);color:var(--primary);border:2px solid var(--primary);" onclick="logPhotoProtein('${ds}',true)">기록 + 프리셋으로 저장</button>`;
+}
+window.logPhotoProtein=function(ds,asPreset){
+    const g=Math.round(parseFloat(document.getElementById('photo-g')?.value)*10)/10;
+    if(!g||g<=0){showToast('g을 확인해주세요','⚠️');return;}
+    if(asPreset){
+        const p=getProteinPresets();
+        p.push({name:window._photoFood,g});
+        localStorage.setItem('food_presets',JSON.stringify(p));
+    }
+    closeQuickLog();
+    addProtein(ds,g,window._photoFood);
+    if(asPreset)showToast('프리셋에도 저장했어요!','🍗');
+};
 
 /* ─── 루틴 탭 (오늘 루틴 / 주간 계획 / 시간표) ────── */
 function renderRoutine(){
@@ -2199,44 +2432,106 @@ window.toggleScheduleCell=function(w,h){
 };
 
 /* ─── 세트 간 휴식 타이머 ────────────────────────── */
-let _restLeft=0,_restTotal=0,_restInterval=null;
+let _restEndAt=0,_restTotal=0,_restInterval=null,_audioCtx=null;
 function fmtRestTime(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function restRemaining(){return Math.max(0,Math.ceil((_restEndAt-Date.now())/1000));}
 function updateRestUI(){
+    const left=restRemaining();
     const d=document.getElementById('rest-timer-display');
     const f=document.getElementById('rest-timer-fill');
-    if(d)d.textContent=fmtRestTime(_restLeft);
-    if(f)f.style.width=Math.max(0,_restLeft/_restTotal*100)+'%';
+    if(d)d.textContent=fmtRestTime(left);
+    if(f)f.style.width=(_restTotal?Math.max(0,left/_restTotal*100):0)+'%';
+}
+// iOS는 사용자 제스처(버튼 탭) 시점에 오디오 컨텍스트를 만들어야 소리가 남
+function initAudio(){
+    try{
+        if(!_audioCtx)_audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+        if(_audioCtx.state==='suspended')_audioCtx.resume();
+    }catch(e){}
 }
 window.startRestTimer=function(sec){
-    _restLeft=sec;_restTotal=sec;
+    initAudio();
+    // 첫 사용 시 알림 권한 요청 (버튼 탭 = 제스처라 요청 가능)
+    if('Notification'in window&&Notification.permission==='default'){
+        Notification.requestPermission().catch(()=>{});
+    }
+    _restEndAt=Date.now()+sec*1000;_restTotal=sec;
     document.getElementById('rest-timer').classList.add('show');
     updateRestUI();
     clearInterval(_restInterval);
     _restInterval=setInterval(()=>{
-        _restLeft--;
-        if(_restLeft<=0){finishRestTimer();return;}
+        if(restRemaining()<=0){finishRestTimer();return;}
         updateRestUI();
-    },1000);
+    },250);
 };
-window.addRestTime=function(s){if(_restInterval){_restLeft+=s;_restTotal+=s;updateRestUI();}};
+window.addRestTime=function(s){if(_restInterval){_restEndAt+=s*1000;_restTotal+=s;updateRestUI();}};
 window.stopRestTimer=function(){
     clearInterval(_restInterval);_restInterval=null;
     document.getElementById('rest-timer').classList.remove('show');
 };
 function finishRestTimer(){
-    stopRestTimer();
+    stopRestTimer(); // 시간 끝나면 자동으로 내려가서 사라짐
     showToast('휴식 끝! 다음 세트 가자 💪','🔔');
-    if(navigator.vibrate)navigator.vibrate([200,100,200,100,400]);
+    if(navigator.vibrate)navigator.vibrate([200,100,200]);
+    playChime();
+    notifyRestDone();
+}
+// 짧은 "띠링" 2음 차임 (~0.5초)
+function playChime(){
     try{
-        const ctx=new (window.AudioContext||window.webkitAudioContext)();
-        [0,0.25,0.5].forEach((t,i)=>{
+        if(!_audioCtx)_audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+        const ctx=_audioCtx;
+        [[880,0],[1318.5,0.15]].forEach(([freq,t])=>{
             const o=ctx.createOscillator(),g=ctx.createGain();
-            o.connect(g);g.connect(ctx.destination);
-            o.frequency.value=i===2?1320:880;g.gain.value=0.3;
-            o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.18);
+            o.type='sine';o.connect(g);g.connect(ctx.destination);
+            o.frequency.value=freq;
+            g.gain.setValueAtTime(0.25,ctx.currentTime+t);
+            g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.35);
+            o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.4);
         });
     }catch(e){}
 }
+// iOS 알림 (홈 화면 설치 + 권한 허용 시)
+function notifyRestDone(){
+    if(!('Notification'in window)||Notification.permission!=='granted')return;
+    const opts={body:'다음 세트 시작할 시간이에요 🏋️',tag:'rest-timer'};
+    if(navigator.serviceWorker&&navigator.serviceWorker.ready){
+        navigator.serviceWorker.ready
+            .then(reg=>reg.showNotification('⏱️ 휴식 끝!',opts))
+            .catch(()=>{try{new Notification('⏱️ 휴식 끝!',opts);}catch(e){}});
+    }else{
+        try{new Notification('⏱️ 휴식 끝!',opts);}catch(e){}
+    }
+}
+// 화면 잠금/백그라운드에서 돌아왔을 때 남은 시간 즉시 보정
+document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden&&_restInterval){
+        if(restRemaining()<=0)finishRestTimer();
+        else updateRestUI();
+    }
+});
+// 설정 탭: 알림 권한 요청
+window.requestNotifyPermission=function(){
+    if(!('Notification'in window)){showToast('이 브라우저는 알림 미지원','⚠️');return;}
+    Notification.requestPermission().then(p=>{
+        showToast(p==='granted'?'알림 허용 완료!':'알림이 허용되지 않았어요','🔔');
+        renderManagement();
+    }).catch(()=>{});
+};
+// 설정 탭: Gemini API 키 저장/삭제
+window.saveGeminiKey=function(){
+    const k=(document.getElementById('gemini-key-input')?.value||'').trim();
+    if(!k){showToast('키를 입력해주세요','⚠️');return;}
+    localStorage.setItem('gemini_api_key',k);
+    showToast('API 키 저장 완료!','🤖');
+    renderManagement();
+};
+window.clearGeminiKey=function(){
+    if(!confirm('저장된 API 키를 삭제할까요?'))return;
+    localStorage.removeItem('gemini_api_key');
+    showToast('키 삭제됨','🗑️');
+    renderManagement();
+};
 
 /* ==================================================
    SERVICE WORKER
