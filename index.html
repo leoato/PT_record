@@ -9,6 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="FitTrack">
     <link rel="apple-touch-icon" href="icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -340,10 +341,71 @@ body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primar
 =================================================== */
 @keyframes spin{to{transform:rotate(360deg);}}
 .spinner{width:36px;height:36px;border:4px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto;}
+
+/* ===================================================
+   NATIVE APP FEEL (바운스/당겨서새로고침 방지 + 터치 폴리시)
+=================================================== */
+html,body{
+    height:100%;overflow:hidden;
+    overscroll-behavior:none;
+    touch-action:manipulation; /* 더블탭 확대 지연 제거 */
+}
+#app-content{overscroll-behavior-y:contain;}
+*{-webkit-tap-highlight-color:transparent;}
+button,.nav-btn,.calendar-day,.course-list-item,.theme-opt,.tt-slot{
+    -webkit-touch-callout:none;
+    -webkit-user-select:none;user-select:none;
+}
+.nav-btn:active{transform:scale(.9);transition:transform .1s;}
+button.primary:active,.btn-sm:active{transform:scale(.97);transition:transform .1s;}
+
+/* ===================================================
+   SPLASH SCREEN (앱 시작 화면)
+=================================================== */
+#splash{
+    position:fixed;inset:0;z-index:9999;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+    background:linear-gradient(180deg,var(--bg) 0%,var(--day-bg) 100%);
+    transition:opacity .4s ease;
+}
+#splash.hide{opacity:0;pointer-events:none;}
+#splash .splash-logo{
+    font-size:76px;line-height:1;
+    animation:splashPop .55s cubic-bezier(.34,1.56,.64,1);
+    filter:drop-shadow(0 8px 24px rgba(37,99,235,.35));
+}
+#splash .splash-title{
+    font-size:22px;font-weight:900;letter-spacing:4px;color:var(--text);
+    animation:splashFade .7s ease;
+}
+#splash .splash-title span{color:var(--primary);}
+#splash .splash-sub{font-size:11px;color:var(--text-muted);letter-spacing:2px;animation:splashFade .9s ease;}
+#splash .splash-bar{width:120px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px;}
+#splash .splash-bar div{width:40%;height:100%;background:linear-gradient(90deg,var(--secondary),var(--primary));border-radius:2px;animation:splashSlide 1s ease-in-out infinite;}
+@keyframes splashPop{from{transform:scale(.3);opacity:0;}to{transform:scale(1);opacity:1;}}
+@keyframes splashFade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+@keyframes splashSlide{0%{margin-left:-40%;}100%{margin-left:100%;}}
+
+/* ===================================================
+   TAB TRANSITION (탭 전환 애니메이션)
+=================================================== */
+@keyframes tabIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+.tab-anim{animation:tabIn .28s cubic-bezier(.25,.8,.4,1);}
     </style>
 </head>
 
 <body data-theme="light">
+<script>
+// 스플래시가 뜨기 전에 저장된 테마를 즉시 적용 (다크 테마 흰 화면 깜빡임 방지)
+try{var _t=localStorage.getItem('app_theme');if(_t)document.body.setAttribute('data-theme',_t);}catch(e){}
+</script>
+<!-- Splash Screen (앱 시작 화면) -->
+<div id="splash">
+    <div class="splash-logo">💪</div>
+    <div class="splash-title">FIT-TRACK <span>PRO</span></div>
+    <div class="splash-sub">71-DAY CHALLENGE</div>
+    <div class="splash-bar"><div></div></div>
+</div>
 <div id="app">
     <header>
         <div class="date-selector">
@@ -545,6 +607,12 @@ document.addEventListener('DOMContentLoaded',()=>{
         const [title,fn]=map[tab]||map.dash;
         document.getElementById('view-title').innerText=title;
         fn();
+        // 탭 전환 애니메이션 + 스크롤 최상단
+        const c=document.getElementById('app-content');
+        c.scrollTop=0;
+        c.classList.remove('tab-anim');
+        void c.offsetWidth; // 리플로우로 애니메이션 재시작
+        c.classList.add('tab-anim');
     };
 
     document.querySelectorAll('.nav-btn').forEach(btn=>{
@@ -555,6 +623,11 @@ document.addEventListener('DOMContentLoaded',()=>{
         });
     });
     renderActiveTab();
+    // 스플래시 화면: 첫 렌더 후 부드럽게 사라짐
+    setTimeout(()=>{
+        const sp=document.getElementById('splash');
+        if(sp){sp.classList.add('hide');setTimeout(()=>sp.remove(),450);}
+    },450);
 });
 
 /* ==================================================
@@ -1800,10 +1873,12 @@ function renderManagement(){
             <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.7;background:var(--day-bg);border-radius:10px;padding:12px;">
                 📌 <strong>최초 1회 설정 (단축어 만들기)</strong><br>
                 ① 단축어 앱 → ＋ 새로운 단축어<br>
-                ② 동작 추가 → 검색 "타이머" → <strong>"타이머 시작"</strong> 선택<br>
-                ③ 파란 시간 값을 탭 → <strong>"단축어 입력"</strong> 변수 선택, 단위를 <strong>초</strong>로 변경<br>
+                ② 동작 추가 → 검색 "숫자" → <strong>"숫자"</strong> 동작 추가 → 숫자 값(0) 탭 → 키보드 위 변수 바에서 <strong>"단축어 입력"</strong> 선택<br>
+                ③ 동작 추가 → 검색 "타이머" → <strong>"타이머 시작"</strong> 추가 → 파란 시간 값 탭 → 키보드 위 변수 바에서 <strong>"숫자"</strong> 변수 선택 → 단위가 <strong>초</strong>인지 확인<br>
                 ④ 상단 이름을 <strong>휴식타이머</strong>로 저장 (위 입력칸과 동일하게)<br>
-                이후에는 앱에서 휴식 버튼만 누르면 iOS 타이머가 자동으로 돌아갑니다.
+                ⑤ 단축어를 한 번 수동 실행해서 권한 팝업을 미리 허용해두기<br><br>
+                ⚠️ 버튼을 눌렀는데 <strong>시간 설정 화면이 뜬다면</strong> → ③에서 시간 값이 변수에 연결되지 않은 거예요. 숫자를 직접 입력하지 말고 반드시 <strong>변수 바에서 "숫자"를 탭</strong>해서 넣어야 합니다.<br>
+                ✅ 연동을 켜면 인앱 타이머는 뜨지 않고 iOS 기본 타이머만 실행됩니다.
             </div>
         </div>
 
@@ -2577,6 +2652,13 @@ function initAudio(){
     }catch(e){}
 }
 window.startRestTimer=function(sec){
+    // 시스템 타이머 연동이 켜져 있으면 iOS 기본 타이머만 실행
+    // (인앱 타이머는 아예 띄우지 않음 — 이중 타이머 방지)
+    if(localStorage.getItem('use_sys_timer')==='1'){
+        const sname=localStorage.getItem('sys_timer_shortcut_name')||'휴식타이머';
+        location.href='shortcuts://run-shortcut?name='+encodeURIComponent(sname)+'&input=text&text='+sec;
+        return;
+    }
     initAudio();
     // 첫 사용 시 알림 권한 요청 (버튼 탭 = 제스처라 요청 가능)
     if('Notification'in window&&Notification.permission==='default'){
@@ -2590,12 +2672,6 @@ window.startRestTimer=function(sec){
         if(restRemaining()<=0){finishRestTimer();return;}
         updateRestUI();
     },250);
-    // 시스템 타이머 연동: 단축어를 통해 iOS 기본 타이머를 자동 실행
-    // → 앱을 나가거나 화면을 잠가도 시스템 알람이 울림
-    if(localStorage.getItem('use_sys_timer')==='1'){
-        const sname=localStorage.getItem('sys_timer_shortcut_name')||'휴식타이머';
-        location.href='shortcuts://run-shortcut?name='+encodeURIComponent(sname)+'&input=text&text='+sec;
-    }
 };
 window.addRestTime=function(s){if(_restInterval){_restEndAt+=s*1000;_restTotal+=s;updateRestUI();}};
 window.stopRestTimer=function(){
