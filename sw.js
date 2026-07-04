@@ -1,4 +1,5 @@
-const CACHE_NAME = 'fittrack-v5';
+const CACHE_NAME='fittrack-v8'; // 버전 올리기
+const ASSETS=['./index.html','./icon.png','./icon-180.png','./icon-192.png','./icon-512.png','./manifest.json'];
 
 const urlsToCache = [
   './index.html',
