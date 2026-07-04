@@ -1786,6 +1786,28 @@ function renderManagement(){
         </div>
 
         <div class="card">
+            <h3 style="margin:0 0 10px;">⏰ 시스템 타이머 연동 (백그라운드 알림 해결)</h3>
+            <div class="theme-opt${localStorage.getItem('use_sys_timer')==='1'?' active':''}" onclick="toggleSysTimer()">
+                <div style="font-size:26px;">${localStorage.getItem('use_sys_timer')==='1'?'✅':'⬜'}</div>
+                <div style="flex:1;">
+                    <div style="font-weight:bold;">휴식 타이머 → 아이폰 기본 타이머 자동 실행</div>
+                    <div style="font-size:12px;color:var(--text-muted);">켜면 앱을 나가거나 화면을 잠가도 시스템 알람이 울려요</div>
+                </div>
+            </div>
+            <label>단축어 이름 (아래에서 만든 이름과 동일하게)</label>
+            <input type="text" id="sys-timer-name" value="${localStorage.getItem('sys_timer_shortcut_name')||'휴식타이머'}" placeholder="휴식타이머">
+            <button class="btn-sm" style="background:var(--primary);color:#fff;width:100%;padding:12px;margin-top:10px;" onclick="saveSysTimerName()">이름 저장</button>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.7;background:var(--day-bg);border-radius:10px;padding:12px;">
+                📌 <strong>최초 1회 설정 (단축어 만들기)</strong><br>
+                ① 단축어 앱 → ＋ 새로운 단축어<br>
+                ② 동작 추가 → 검색 "타이머" → <strong>"타이머 시작"</strong> 선택<br>
+                ③ 파란 시간 값을 탭 → <strong>"단축어 입력"</strong> 변수 선택, 단위를 <strong>초</strong>로 변경<br>
+                ④ 상단 이름을 <strong>휴식타이머</strong>로 저장 (위 입력칸과 동일하게)<br>
+                이후에는 앱에서 휴식 버튼만 누르면 iOS 타이머가 자동으로 돌아갑니다.
+            </div>
+        </div>
+
+        <div class="card">
             <h3 style="margin:0 0 5px;">💾 데이터 백업
                 <span style="font-size:11px;color:var(--primary);font-weight:normal;"> (최근: ${lastBackup})</span>
             </h3>
@@ -2297,6 +2319,9 @@ function renderTodayRoutine(){
 
     const doneCnt=rt.exercises.filter(e=>doneNames.has(e.name)).length;
     const pct=Math.round((doneCnt+(cardioDone?1:0))/(rt.exercises.length+1)*100);
+    // 운동별 목표 시간: 90분을 세트 수 비율로 배분 (메인 4세트 > 보조 3세트)
+    const totalSets=rt.exercises.reduce((s,e)=>s+(e.main?4:3),0);
+    const timeBudget=rt.exercises.map(e=>Math.round((e.main?4:3)*90/totalSets));
 
     gc.innerHTML=`
         <div class="card" style="border-left:4px solid ${rt.col};">
@@ -2315,6 +2340,7 @@ function renderTodayRoutine(){
             </div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">💡 12회 가능한 무게 · 메인 4세트 / 보조 3세트 · 총 90분 + 유산소 20분</div>
         </div>
+        <div id="session-card"></div>
         ${rt.exercises.map((ex,i)=>{
             const done=doneNames.has(ex.name);
             const my=hist[ex.name];
@@ -2327,6 +2353,7 @@ function renderTodayRoutine(){
                     <div style="display:flex;align-items:center;gap:8px;">
                         <span style="background:${done?'var(--success)':rt.col};color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;flex-shrink:0;">${done?'✓':i+1}</span>
                         <span style="font-weight:bold;font-size:15px;${done?'text-decoration:line-through;':''}">${ex.name}${ex.label?` <span style="font-size:11px;color:var(--text-muted);">(${ex.label})</span>`:''}</span>
+                        <span style="font-size:10px;color:var(--text-muted);background:var(--day-bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;flex-shrink:0;">⏱ ~${timeBudget[i]}분</span>
                     </div>
                     <div style="font-size:11px;margin-top:4px;padding-left:30px;">
                         <span style="background:${ex.main?rt.col+'22':'var(--border)'};color:${ex.main?rt.col:'var(--text-muted)'};border-radius:4px;padding:1px 6px;font-weight:bold;">${ex.main?'메인 4세트':'보조 3세트'} × ${ROUTINE_REPS}회</span>
@@ -2359,7 +2386,107 @@ function renderTodayRoutine(){
                 <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:12px;" onclick="startRestTimer(180)">3:00</button>
             </div>
         </div>`;
+    renderSessionCard();
 }
+
+/* ─── 운동 세션 타이머 (90분 목표 트래킹) ────────── */
+const SESSION_TARGET_MIN=90;
+function fmtSessionMin(min){return min>=60?Math.floor(min/60)+'시간 '+(min%60)+'분':min+'분';}
+function fmtElapsed(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
+function sessionColor(elapsedMin){
+    if(elapsedMin>=SESSION_TARGET_MIN)return 'var(--danger)';
+    if(elapsedMin>=SESSION_TARGET_MIN*0.8)return '#f59e0b';
+    return 'var(--primary)';
+}
+function renderSessionCard(){
+    const el=document.getElementById('session-card');if(!el)return;
+    clearInterval(window._sessInt);
+    const ds=window.currentDate;
+    const sess=(getData()[ds]||{}).session;
+    if(!sess||!sess.start){
+        el.innerHTML=`<div class="card" style="padding:14px;">
+            <button class="primary" style="margin-top:0;" onclick="startSession()">▶️ 운동 시작 (90분 타이머)</button>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">시작을 누르면 그날 루틴이 끝날 때까지 시간을 측정해요</div>
+        </div>`;
+        return;
+    }
+    if(sess.end){
+        const min=Math.round((sess.end-sess.start)/60000);
+        const within=min<=SESSION_TARGET_MIN;
+        el.innerHTML=`<div class="card" style="padding:14px;border-left:4px solid ${within?'var(--success)':'var(--danger)'};">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-size:11px;color:var(--text-muted);">오늘 운동 시간</div>
+                    <div style="font-size:20px;font-weight:900;color:${within?'var(--success)':'var(--danger)'};">🏁 ${fmtSessionMin(min)} ${within?'✅ 90분 내 성공!':'⚠️ 90분 초과'}</div>
+                </div>
+                <button class="btn-sm btn-edit" onclick="resetSession()">다시 측정</button>
+            </div>
+        </div>`;
+        return;
+    }
+    // 진행 중
+    el.innerHTML=`<div class="card" style="padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);">⏱️ 운동 진행 중</div>
+                <div id="sess-elapsed" style="font-size:28px;font-weight:900;font-variant-numeric:tabular-nums;">0:00</div>
+                <div id="sess-remain" style="font-size:12px;color:var(--text-muted);margin-top:2px;"></div>
+            </div>
+            <button class="btn-sm" style="background:var(--danger);color:#fff;padding:12px 16px;" onclick="endSession()">🏁 운동 종료</button>
+        </div>
+        <div style="background:var(--border);border-radius:8px;height:8px;margin-top:10px;overflow:hidden;">
+            <div id="sess-bar" style="height:100%;width:0%;border-radius:8px;transition:width 1s linear;background:var(--primary);"></div>
+        </div>
+    </div>`;
+    updateSessionUI(sess.start);
+    window._sessInt=setInterval(()=>{
+        if(!document.getElementById('sess-elapsed')){clearInterval(window._sessInt);return;}
+        updateSessionUI(sess.start);
+    },1000);
+}
+function updateSessionUI(startTs){
+    const sec=Math.floor((Date.now()-startTs)/1000);
+    const min=sec/60;
+    const col=sessionColor(min);
+    const e=document.getElementById('sess-elapsed');
+    const r=document.getElementById('sess-remain');
+    const b=document.getElementById('sess-bar');
+    if(e){e.textContent=fmtElapsed(sec);e.style.color=col;}
+    if(r){
+        const remain=Math.ceil(SESSION_TARGET_MIN-min);
+        r.innerHTML=remain>0
+            ?`목표 90분까지 <strong style="color:${col};">${remain}분</strong> 남음`
+            :`<strong style="color:var(--danger);">⚠️ 90분에서 ${Math.abs(remain)}분 초과! 마무리하자</strong>`;
+    }
+    if(b){b.style.width=Math.min(100,min/SESSION_TARGET_MIN*100)+'%';b.style.background=col;}
+}
+window.startSession=function(){
+    const ds=window.currentDate;
+    const data=getData();
+    if(!data[ds])data[ds]={};
+    data[ds].session={start:Date.now()};
+    saveData(data);
+    showToast('운동 시작! 90분 안에 끝내자 🔥','▶️');
+    renderSessionCard();
+};
+window.endSession=function(){
+    const ds=window.currentDate;
+    const data=getData();
+    if(!data[ds]?.session?.start)return;
+    data[ds].session.end=Date.now();
+    saveData(data);
+    const min=Math.round((data[ds].session.end-data[ds].session.start)/60000);
+    showToast(`운동 종료! 총 ${fmtSessionMin(min)}`,'🏁');
+    renderSessionCard();
+};
+window.resetSession=function(){
+    if(!confirm('운동 시간 기록을 지우고 다시 측정할까요?'))return;
+    const ds=window.currentDate;
+    const data=getData();
+    if(data[ds])delete data[ds].session;
+    saveData(data);
+    renderSessionCard();
+};
 
 window.logFixedCardio=function(){
     const ds=window.currentDate;
@@ -2463,6 +2590,12 @@ window.startRestTimer=function(sec){
         if(restRemaining()<=0){finishRestTimer();return;}
         updateRestUI();
     },250);
+    // 시스템 타이머 연동: 단축어를 통해 iOS 기본 타이머를 자동 실행
+    // → 앱을 나가거나 화면을 잠가도 시스템 알람이 울림
+    if(localStorage.getItem('use_sys_timer')==='1'){
+        const sname=localStorage.getItem('sys_timer_shortcut_name')||'휴식타이머';
+        location.href='shortcuts://run-shortcut?name='+encodeURIComponent(sname)+'&input=text&text='+sec;
+    }
 };
 window.addRestTime=function(s){if(_restInterval){_restEndAt+=s*1000;_restTotal+=s;updateRestUI();}};
 window.stopRestTimer=function(){
@@ -2531,6 +2664,19 @@ window.clearGeminiKey=function(){
     localStorage.removeItem('gemini_api_key');
     showToast('키 삭제됨','🗑️');
     renderManagement();
+};
+// 설정 탭: 시스템 타이머 연동
+window.toggleSysTimer=function(){
+    const on=localStorage.getItem('use_sys_timer')==='1';
+    localStorage.setItem('use_sys_timer',on?'0':'1');
+    showToast(on?'시스템 타이머 연동 끔':'시스템 타이머 연동 켬! 단축어를 먼저 만들어주세요','⏰');
+    renderManagement();
+};
+window.saveSysTimerName=function(){
+    const n=(document.getElementById('sys-timer-name')?.value||'').trim();
+    if(!n){showToast('단축어 이름을 입력해주세요','⚠️');return;}
+    localStorage.setItem('sys_timer_shortcut_name',n);
+    showToast('단축어 이름 저장: '+n,'⏰');
 };
 
 /* ==================================================
