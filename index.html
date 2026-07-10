@@ -616,6 +616,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     };
 
     window.renderActiveTab=()=>{
+        autoStopStaleSessions();
         const active=document.querySelector('.nav-btn.active');
         const tab=active?.dataset.tab||'dash';
         window.currentTab=tab;
@@ -2654,10 +2655,11 @@ function renderTodayRoutine(){
                     <span style="font-size:18px;">🏃</span>
                     <span style="font-weight:bold;font-size:15px;${cardioDone?'text-decoration:line-through;':''}">천국의 계단 20분</span>
                 </div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:26px;">매일 운동 마지막 고정 유산소</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-left:26px;">매일 운동 마지막 고정 유산소 · 완료하면 인증사진 촬영</div>
             </div>
-            <button class="btn-sm" style="background:${cardioDone?'var(--success)':'#f59e0b'};color:#fff;padding:10px 14px;flex-shrink:0;" onclick="logFixedCardio()">${cardioDone?'✅ 완료':'기록하기'}</button>
+            <button class="btn-sm" style="background:${cardioDone?'var(--success)':'#f59e0b'};color:#fff;padding:10px 14px;flex-shrink:0;" onclick="logFixedCardio()">${cardioDone?'✅ 완료':'📷 완료 + 인증사진'}</button>
         </div>
+        <input type="file" id="cardio-photo-cam" accept="image/*" capture="environment" style="display:none;" onchange="handleCardioPhoto(this)">
         <div class="card">
             <h5 style="margin:0 0 8px;">⏱️ 세트 간 휴식 타이머</h5>
             <div style="display:flex;gap:8px;">
@@ -2670,8 +2672,9 @@ function renderTodayRoutine(){
     renderSessionCard();
 }
 
-/* ─── 운동 세션 타이머 (90분 목표 트래킹) ────────── */
+/* ─── 운동 세션 타이머 (90분 목표 트래킹 · 200분 되면 자동 종료) ────────── */
 const SESSION_TARGET_MIN=90;
+const SESSION_AUTO_STOP_MIN=200; // 종료 버튼 깜빡해도 200분 지나면 자동으로 멈춤
 function fmtSessionMin(min){return min>=60?Math.floor(min/60)+'시간 '+(min%60)+'분':min+'분';}
 function fmtElapsed(sec){return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');}
 function sessionColor(elapsedMin){
@@ -2687,7 +2690,7 @@ function renderSessionCard(){
     if(!sess||!sess.start){
         el.innerHTML=`<div class="card" style="padding:14px;">
             <button class="primary" style="margin-top:0;" onclick="startSession()">▶️ 운동 시작 (90분 타이머)</button>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">시작을 누르면 그날 루틴이 끝날 때까지 시간을 측정해요</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:8px;text-align:center;">시작을 누르면 그날 루틴이 끝날 때까지 시간을 측정해요<br>⏱️ 종료를 깜빡해도 ${SESSION_AUTO_STOP_MIN}분이 지나면 자동으로 멈춰요</div>
         </div>`;
         return;
     }
@@ -2699,6 +2702,7 @@ function renderSessionCard(){
                 <div>
                     <div style="font-size:11px;color:var(--text-muted);">오늘 운동 시간</div>
                     <div style="font-size:20px;font-weight:900;color:${within?'var(--success)':'var(--danger)'};">🏁 ${fmtSessionMin(min)} ${within?'✅ 90분 내 성공!':'⚠️ 90분 초과'}</div>
+                    ${sess.auto?`<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">⏹️ 종료 버튼을 못 눌러서 ${SESSION_AUTO_STOP_MIN}분에 자동 종료됐어요</div>`:''}
                 </div>
                 <button class="btn-sm btn-edit" onclick="resetSession()">다시 측정</button>
             </div>
@@ -2718,12 +2722,42 @@ function renderSessionCard(){
         <div style="background:var(--border);border-radius:8px;height:8px;margin-top:10px;overflow:hidden;">
             <div id="sess-bar" style="height:100%;width:0%;border-radius:8px;transition:width 1s linear;background:var(--primary);"></div>
         </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:8px;text-align:center;">⏱️ ${SESSION_AUTO_STOP_MIN}분이 지나면 자동으로 종료돼요</div>
     </div>`;
     updateSessionUI(sess.start);
     window._sessInt=setInterval(()=>{
         if(!document.getElementById('sess-elapsed')){clearInterval(window._sessInt);return;}
+        const elapsedMin=(Date.now()-sess.start)/60000;
+        if(elapsedMin>=SESSION_AUTO_STOP_MIN){
+            clearInterval(window._sessInt);
+            autoStopStaleSessions();
+            renderSessionCard();
+            return;
+        }
         updateSessionUI(sess.start);
     },1000);
+}
+
+// 앱을 다시 열었을 때(백그라운드/탭 전환 포함) 200분 넘은 세션이 있으면 자동 종료
+function autoStopStaleSessions(){
+    const data=getData();
+    let changed=false;
+    Object.keys(data).forEach(ds=>{
+        const sess=data[ds]?.session;
+        if(sess&&sess.start&&!sess.end){
+            const min=(Date.now()-sess.start)/60000;
+            if(min>=SESSION_AUTO_STOP_MIN){
+                data[ds].session.end=sess.start+SESSION_AUTO_STOP_MIN*60000;
+                data[ds].session.auto=true;
+                changed=true;
+            }
+        }
+    });
+    if(changed){
+        saveData(data);
+        showToast(`⏱️ ${SESSION_AUTO_STOP_MIN}분 넘은 운동 타이머를 자동으로 종료했어요`,'⏹️');
+    }
+    return changed;
 }
 function updateSessionUI(startTs){
     const sec=Math.floor((Date.now()-startTs)/1000);
@@ -2769,18 +2803,74 @@ window.resetSession=function(){
     renderSessionCard();
 };
 
+// "기록하기" 버튼 → 카메라 실행 (완료 처리는 사진을 찍은 뒤 handleCardioPhoto에서)
 window.logFixedCardio=function(){
+    const ds=window.currentDate;
+    const data=getData();
+    if((data[ds]?.workout||[]).some(w=>w.type==='cardio'&&(w.name||'').includes('계단'))){
+        showToast('이미 오늘 유산소 완료!','🏃');
+        return;
+    }
+    const cam=document.getElementById('cardio-photo-cam');
+    if(cam)cam.click();
+    else commitFixedCardioLog(); // 카메라 입력이 화면에 없는 예외 상황 대비
+};
+
+function commitFixedCardioLog(){
     const ds=window.currentDate;
     const data=getData();
     if(!data[ds])data[ds]={};
     if(!data[ds].workout)data[ds].workout=[];
-    if(data[ds].workout.some(w=>w.type==='cardio'&&(w.name||'').includes('계단'))){showToast('이미 오늘 유산소 완료!','🏃');return;}
+    if(data[ds].workout.some(w=>w.type==='cardio'&&(w.name||'').includes('계단')))return false;
     data[ds].workout.push({id:'W'+Date.now(),type:'cardio',name:FIXED_CARDIO.name,part:'유산소',time:String(FIXED_CARDIO.time),dist:'',memo:'루틴 고정 유산소'});
     saveData(data);
     const lib=getLib();
     if(!lib.includes(FIXED_CARDIO.name)){lib.push(FIXED_CARDIO.name);localStorage.setItem('workout_lib',JSON.stringify(lib));}
-    showToast('천국의 계단 20분 완료!','🏃');
+    return true;
+}
+
+// 카메라로 찍은 인증사진 처리 → 완료 기록 + 공유 시트 표시
+window.handleCardioPhoto=function(input){
+    const file=input.files[0];
+    input.value='';
+    if(!file)return; // 사용자가 촬영을 취소한 경우 완료 처리 안 함
+    const logged=commitFixedCardioLog();
+    if(logged)showToast('천국의 계단 20분 완료!','🏃');
     renderTodayRoutine();
+    showCardioPhotoSheet(file);
+};
+
+// 촬영한 인증사진 미리보기 + 카카오톡 공유 시트
+function showCardioPhotoSheet(file){
+    const url=URL.createObjectURL(file);
+    window._cardioPhotoFile=file;
+    const canShareFiles=!!(navigator.canShare&&navigator.canShare({files:[file]}));
+    document.getElementById('quick-log-content').innerHTML=`
+        <div style="text-align:center;">
+            <div style="font-size:16px;font-weight:900;margin-bottom:12px;">🏃 천국의 계단 20분 완료!</div>
+            <img src="${url}" style="max-width:100%;max-height:280px;border-radius:14px;margin-bottom:14px;object-fit:cover;">
+            ${canShareFiles
+                ?`<button class="primary" style="margin-top:0;" onclick="shareCardioPhoto()">📤 카카오톡으로 공유</button>
+                   <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">공유 시트가 뜨면 카카오톡을 선택해서 보내세요</div>`
+                :`<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">이 브라우저/앱에서는 바로 공유가 안 돼요. 사진을 저장한 뒤 카카오톡에서 직접 보내주세요.</div>
+                   <a href="${url}" download="cardio_${window.currentDate}.jpg" class="primary" style="display:block;text-decoration:none;box-sizing:border-box;">📥 사진 저장하기</a>`}
+            <button class="btn-sm" style="width:100%;margin-top:10px;background:var(--day-bg);color:var(--text);border:1px solid var(--border);padding:12px;" onclick="closeQuickLog()">닫기</button>
+        </div>`;
+    document.getElementById('quick-log-overlay').classList.add('show');
+    setTimeout(()=>document.getElementById('quick-log-sheet').classList.add('show'),10);
+}
+window.shareCardioPhoto=async function(){
+    const file=window._cardioPhotoFile;
+    if(!file){showToast('공유할 사진이 없어요','⚠️');return;}
+    try{
+        await navigator.share({
+            files:[file],
+            title:'천국의 계단 20분 인증',
+            text:`오늘도 천국의 계단 20분 완료! 🏃 (${window.currentDate})`
+        });
+    }catch(e){
+        if(e&&e.name!=='AbortError')showToast('공유에 실패했어요','⚠️');
+    }
 };
 
 function renderWeekPlan(){
@@ -3172,9 +3262,13 @@ function notifyRestDone(){
 }
 // 화면 잠금/백그라운드에서 돌아왔을 때 남은 시간 즉시 보정
 document.addEventListener('visibilitychange',()=>{
-    if(!document.hidden&&_restInterval){
-        if(restRemaining()<=0)finishRestTimer();
-        else updateRestUI();
+    if(!document.hidden){
+        if(_restInterval){
+            if(restRemaining()<=0)finishRestTimer();
+            else updateRestUI();
+        }
+        // 백그라운드에 있는 동안 200분이 지났으면 돌아왔을 때 바로 자동 종료 처리
+        if(autoStopStaleSessions()&&window.currentTab==='course')renderTodayRoutine();
     }
 });
 // 설정 탭: 알림 권한 요청
