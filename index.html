@@ -37,12 +37,12 @@ body[data-theme="ocean"] {
     --glow:0 0 20px rgba(0,212,255,0.25); --nav-bg:#070d1a; --nav-inactive:#2a5a6e;
     --input-bg:#0d1829; --day-bg:#0d1829;
 }
-body[data-theme="volt"] {
-    --primary:#facc15; --secondary:#f59e0b; --success:#22c55e; --danger:#ef4444;
-    --bg:#000; --card:#0f0e0a; --text:#fefce8; --text-muted:#8a8468;
-    --border:#3f3a1a; --shadow:0 10px 40px -10px rgba(250,204,21,0.3);
-    --glow:0 0 15px rgba(250,204,21,0.35); --nav-bg:#000; --nav-inactive:#565130;
-    --input-bg:#14120a; --day-bg:#12100a;
+body[data-theme="violet"] {
+    --primary:#a855f7; --secondary:#ec4899; --success:#34d399; --danger:#f87171;
+    --bg:#0b0616; --card:#150d24; --text:#f3e8ff; --text-muted:#8b7aa8;
+    --border:#3b2a5e; --shadow:0 10px 40px -10px rgba(168,85,247,0.25);
+    --glow:0 0 20px rgba(168,85,247,0.3); --nav-bg:#0b0616; --nav-inactive:#4a3a6e;
+    --input-bg:#150d24; --day-bg:#150d24;
 }
 
 /* ===================================================
@@ -56,7 +56,7 @@ body{
 }
 body[data-theme="hell"]{background-image:radial-gradient(circle at center bottom,#3a0a0a 0%,#000 80%);background-attachment:fixed;}
 body[data-theme="ocean"]{background-image:radial-gradient(circle at 30% 70%,#0a1f3d 0%,#070d1a 70%);background-attachment:fixed;}
-body[data-theme="volt"]{background-image:radial-gradient(circle at center bottom,#2a2405 0%,#000 80%);background-attachment:fixed;}
+body[data-theme="violet"]{background-image:radial-gradient(circle at 70% 20%,#2a1052 0%,#0b0616 70%);background-attachment:fixed;}
 
 #app{display:flex;flex-direction:column;height:100vh;}
 
@@ -69,7 +69,7 @@ header{
     position:sticky;top:0;z-index:100;
 }
 body[data-theme="hell"] header,body[data-theme="ocean"] header{background:rgba(0,0,0,0.92);}
-body[data-theme="volt"] header{background:rgba(0,0,0,0.92);}
+body[data-theme="violet"] header{background:rgba(11,6,22,0.92);}
 
 h1{margin:0;font-size:18px;text-align:center;color:var(--text);}
 h3,h4,h5{color:var(--text);}
@@ -101,9 +101,9 @@ body[data-theme="ocean"] .card::before{
     content:'';position:absolute;top:0;left:0;width:100%;height:2px;
     background:linear-gradient(90deg,transparent,var(--primary),transparent);
 }
-body[data-theme="volt"] .card::before{
+body[data-theme="violet"] .card::before{
     content:'';position:absolute;top:0;left:0;width:100%;height:2px;
-    background:linear-gradient(90deg,transparent,var(--primary),transparent);
+    background:linear-gradient(90deg,transparent,var(--primary),var(--secondary),transparent);
 }
 
 /* ===================================================
@@ -124,7 +124,7 @@ body[data-theme="volt"] .card::before{
 .nav-btn.active{color:var(--primary);font-weight:bold;}
 body[data-theme="hell"] .nav-btn.active,
 body[data-theme="ocean"] .nav-btn.active{text-shadow:0 0 10px var(--primary);}
-body[data-theme="volt"] .nav-btn.active{text-shadow:0 0 10px var(--primary);}
+body[data-theme="violet"] .nav-btn.active{text-shadow:0 0 10px var(--primary);}
 
 /* ===================================================
    FORM ELEMENTS
@@ -322,7 +322,7 @@ button.primary{
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 body[data-theme="hell"] #toast{background:#3d0a0a;border:1px solid var(--primary);}
 body[data-theme="ocean"] #toast{background:#0d1829;border:1px solid var(--primary);}
-body[data-theme="volt"] #toast{background:#14120a;border:1px solid var(--primary);}
+body[data-theme="violet"] #toast{background:#150d24;border:1px solid var(--primary);}
 
 /* ===================================================
    REST TIMER (세트 간 휴식)
@@ -1844,7 +1844,7 @@ function renderManagement(){
         {id:'light',label:'☀️ 라이트 (클린)',desc:'깔끔하고 밝은 기본 테마',dot:'linear-gradient(135deg,#2563eb,#3b82f6)'},
         {id:'hell',label:'🔥 헬파이어 (불지옥)',desc:'기존 다크 레드 네온 테마',dot:'linear-gradient(135deg,#ff0000,#ff4800)'},
         {id:'ocean',label:'🌊 딥 오션 (사이버)',desc:'다크 배경에 사이언 네온 테마',dot:'linear-gradient(135deg,#00d4ff,#0ea5e9,#070d1a)'},
-        {id:'volt',label:'⚡ 헤비 옐로 (하드코어)',desc:'블랙+옐로 원판 감성, 헬스장 포스터 스타일',dot:'linear-gradient(135deg,#facc15,#f59e0b,#000)'},
+        {id:'violet',label:'💜 네온 바이올렛 (신스웨이브)',desc:'퍼플·핑크 네온의 레트로 신스웨이브 테마',dot:'linear-gradient(135deg,#a855f7,#ec4899,#0b0616)'},
     ];
     content.innerHTML=`
         <div class="card">
@@ -1941,7 +1941,7 @@ function renderManagement(){
 window.applyTheme=applyTheme;
 
 function getBackupData(){
-    const keys=['fit_data','workout_lib','workout_history','food_presets','workout_schedule','gym_data'];
+    const keys=['fit_data','workout_lib','workout_history','food_presets','workout_schedule','gym_data','week_routine_map'];
     const b={};keys.forEach(k=>b[k]=JSON.parse(localStorage.getItem(k)||'{}'));
     return JSON.stringify(b,null,2);
 }
@@ -2029,8 +2029,39 @@ const ROUTINE_TYPES={
     ]},
     rest:{label:'휴식',emo:'😴',col:'#94a3b8',exercises:[]},
 };
-// getDay(): 0=일,1=월...6=토
+// getDay(): 0=일,1=월...6=토 — 기본값(변경 없을 때 기준). 실제 사용은 getWeekRoutineMap() 참고.
 const WEEK_ROUTINE=['rest','push','pull','legs','push','pull','legs'];
+
+/* ─── 요일별 루틴 매핑 (사용자가 변경 가능) ─────────
+   기본값은 WEEK_ROUTINE과 동일하되, week_routine_map에 저장된 값이 있으면 그걸 우선 사용.
+   예: 월요일에 사정이 생겨 못하면 일요일을 '밀기'로 바꿔서 그날 하면 됨. */
+function getWeekRoutineMap(){
+    let m=null;
+    try{m=JSON.parse(localStorage.getItem('week_routine_map')||'null');}catch(e){}
+    if(!Array.isArray(m)||m.length!==7||m.some(k=>!ROUTINE_TYPES[k])){
+        m=[...WEEK_ROUTINE];
+        localStorage.setItem('week_routine_map',JSON.stringify(m));
+    }
+    return m;
+}
+function saveWeekRoutineMap(m){localStorage.setItem('week_routine_map',JSON.stringify(m));}
+window.setWeekRoutineDay=function(w,key){
+    const map=getWeekRoutineMap();
+    map[w]=key;
+    saveWeekRoutineMap(map);
+    const names=['일','월','화','수','목','금','토'];
+    showToast(`${names[w]}요일 → ${ROUTINE_TYPES[key].label}`,'🗓️');
+    // 현재 보고 있는 화면 갱신
+    const activeTab=document.querySelector('.nav-btn.active')?.dataset.tab;
+    if(activeTab==='course'){
+        const activeSub=document.querySelector('.tab-option.active');
+        const subLabel=activeSub?activeSub.textContent:'';
+        if(subLabel.includes('주간'))renderWeekPlan();
+        else renderTodayRoutine();
+    }else if(activeTab==='dash'){
+        renderTodayRoutineCard(window.currentDate);
+    }
+};
 
 /* ==================================================
    헬스장별 루틴 (gym_data)
@@ -2080,7 +2111,7 @@ function getGymRoutine(routineKey,gymId){
 }
 
 function weekdayOf(ds){const p=ds.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]).getDay();}
-function getRoutineKey(ds){return WEEK_ROUTINE[weekdayOf(ds)];}
+function getRoutineKey(ds){return getWeekRoutineMap()[weekdayOf(ds)];}
 function dietStatus(ds){
     const t=new Date(ds),d0=new Date(DIET_PLAN.start),d1=new Date(DIET_PLAN.end);
     const day=Math.floor((t-d0)/86400000)+1;
@@ -2137,7 +2168,7 @@ function renderTodayRoutineCard(ds){
     if(key==='rest'){
         el.innerHTML=`<div class="card" style="text-align:center;">
             <div style="font-size:34px;">😴</div>
-            <div style="font-weight:900;font-size:17px;margin-top:4px;">오늘은 휴식일! (일요일)</div>
+            <div style="font-weight:900;font-size:17px;margin-top:4px;">오늘은 휴식일!</div>
             <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">잘 먹고 잘 자는 것도 운동입니다. 단백질 120g은 오늘도 챙기기! 🥩</div>
         </div>`;return;
     }
@@ -2529,6 +2560,24 @@ window.switchRoutineTab=function(tab,btn){
     else renderTimetable();
 };
 
+// 요일별 루틴 종류 변경 버튼 (밀기/당기기/하체/휴식) — 일요일 포함 모든 요일 변경 가능
+function renderDayTypeSelector(ds,key){
+    const w=weekdayOf(ds);
+    const names=['일','월','화','수','목','금','토'];
+    const opts=[
+        {key:'push',label:'🫸 밀기'},
+        {key:'pull',label:'🫷 당기기'},
+        {key:'legs',label:'🦵 하체'},
+        {key:'rest',label:'😴 휴식'},
+    ];
+    return `<div class="card" style="padding:12px 14px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">🔧 ${names[w]}요일 루틴 종류 — 탭해서 변경 (이 요일 전체에 적용)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+            ${opts.map(o=>`<button class="btn-sm" style="padding:9px 2px;background:${key===o.key?'var(--primary)':'var(--day-bg)'};color:${key===o.key?'#fff':'var(--text)'};border:1px solid ${key===o.key?'var(--primary)':'var(--border)'};font-size:12px;" onclick="setWeekRoutineDay(${w},'${o.key}')">${o.label}</button>`).join('')}
+        </div>
+    </div>`;
+}
+
 function renderTodayRoutine(){
     const gc=document.getElementById('routine-content');if(!gc)return;
     const ds=window.currentDate;
@@ -2542,9 +2591,9 @@ function renderTodayRoutine(){
     const hist=getHistory();
 
     if(key==='rest'){
-        gc.innerHTML=`<div class="card" style="text-align:center;padding:40px 20px;">
+        gc.innerHTML=renderDayTypeSelector(ds,key)+`<div class="card" style="text-align:center;padding:40px 20px;">
             <div style="font-size:60px;">😴</div>
-            <h3 style="margin:10px 0 6px;">일요일은 완전 휴식!</h3>
+            <h3 style="margin:10px 0 6px;">휴식일!</h3>
             <p style="color:var(--text-muted);font-size:13px;">근육은 쉴 때 자랍니다.<br>단백질 120g은 오늘도 꼭 챙기세요 🥩</p>
         </div>`;return;
     }
@@ -2555,7 +2604,7 @@ function renderTodayRoutine(){
     const totalSets=rt.exercises.reduce((s,e)=>s+(e.main?4:3),0);
     const timeBudget=rt.exercises.map(e=>Math.round((e.main?4:3)*90/totalSets));
 
-    gc.innerHTML=`
+    gc.innerHTML=renderDayTypeSelector(ds,key)+`
         <div class="card" style="border-left:4px solid ${rt.col};">
             <div style="display:flex;justify-content:space-between;align-items:center;">
                 <div>
@@ -2739,11 +2788,32 @@ function renderWeekPlan(){
     const names=['일','월','화','수','목','금','토'];
     const todayW=weekdayOf(getKSTDate());
     const gymId=getGymData().selectedGym;
+    const map=getWeekRoutineMap();
+    const edit=!!window._weekEditMode;
+    const opts=[
+        {key:'push',label:'🫸 밀기'},
+        {key:'pull',label:'🫷 당기기'},
+        {key:'legs',label:'🦵 하체'},
+        {key:'rest',label:'😴 휴식'},
+    ];
     gc.innerHTML=`<div class="card">
-        <h4 style="margin:0 0 12px;">🗓️ 주간 루틴 (주 6일 · 일요일 휴식)</h4>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h4 style="margin:0;">🗓️ 주간 루틴 (요일별 설정)</h4>
+            <button class="btn-sm" style="background:${edit?'var(--primary)':'var(--day-bg)'};color:${edit?'#fff':'var(--text)'};border:1px solid ${edit?'var(--primary)':'var(--border)'};" onclick="toggleWeekEdit()">${edit?'✓ 완료':'✏️ 요일 수정'}</button>
+        </div>
+        ${edit?`<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">요일마다 원하는 루틴으로 바꿀 수 있어요. 일요일도 변경 가능 — 예: 월요일에 못했으면 일요일을 밀기로 바꿔서 보충하세요.</div>`:''}
         ${[1,2,3,4,5,6,0].map(w=>{
-            const rt=getGymRoutine(WEEK_ROUTINE[w],gymId);
+            const key=map[w];
+            const rt=getGymRoutine(key,gymId);
             const isToday=w===todayW;
+            if(edit){
+                return `<div style="padding:12px;background:var(--day-bg);border-radius:12px;margin-bottom:8px;${isToday?'outline:2px solid var(--primary);':''}">
+                    <div style="font-weight:900;margin-bottom:8px;">${names[w]}요일${isToday?' <span style="font-size:10px;background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;">오늘</span>':''}</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+                        ${opts.map(o=>`<button class="btn-sm" style="padding:8px 2px;background:${key===o.key?'var(--primary)':'var(--card)'};color:${key===o.key?'#fff':'var(--text)'};border:1px solid ${key===o.key?'var(--primary)':'var(--border)'};font-size:11px;" onclick="setWeekRoutineDay(${w},'${o.key}')">${o.label}</button>`).join('')}
+                    </div>
+                </div>`;
+            }
             return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--day-bg);border-radius:12px;margin-bottom:8px;border-left:4px solid ${rt.col};${isToday?'outline:2px solid '+rt.col+';':''}">
                 <div style="width:34px;height:34px;border-radius:50%;background:${rt.col}22;color:${rt.col};display:flex;align-items:center;justify-content:center;font-weight:900;flex-shrink:0;">${names[w]}</div>
                 <div style="flex:1;">
@@ -2755,6 +2825,10 @@ function renderWeekPlan(){
         <div style="font-size:11px;color:var(--text-muted);padding:8px;background:var(--day-bg);border-radius:8px;">💡 무게는 12회 가능한 무게 · 메인 4세트 / 보조 3세트 · 90분 + 유산소 20분</div>
     </div>`;
 }
+window.toggleWeekEdit=function(){
+    window._weekEditMode=!window._weekEditMode;
+    renderWeekPlan();
+};
 
 /* ─── 운동 시간표 (에타 스타일) ──────────────────── */
 function renderTimetable(){
