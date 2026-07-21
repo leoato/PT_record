@@ -11,7 +11,8 @@
 1. **단일 `index.html` 구조.** 별도 JS/CSS 파일을 만들지 않는다. 모든 코드는 `index.html` 안에 둔다.
 2. **요청받은 부분만 수정.** 기존 기능·코드는 요청 없이 변경·삭제하지 않는다.
 3. **모든 데이터는 `localStorage`.** 새 키를 추가하면 `getBackupData()`의 `keys` 배열에도 반드시 추가한다 (백업 누락 방지).
-   - **예외: 밥 사진 보관함만 IndexedDB를 쓴다.** 사진은 장당 수백KB라 localStorage 5MB 한도를 넘겨 운동 기록 저장까지 실패시킬 수 있다. 당일 임시 데이터라 백업 대상이 아니고 날짜가 지나면 자동 삭제된다. 사진 외의 데이터는 계속 localStorage에 둔다.
+   - **예외: 밥 사진 보관함만 IndexedDB를 쓴다.** 사진은 장당 수백KB라 localStorage 5MB 한도를 넘겨 운동 기록 저장까지 실패시킬 수 있다. 백업 대상이 아니며 `MEAL_KEEP_DAYS`(오늘 포함 3일)가 지나면 자동 삭제된다. 사진 외의 데이터는 계속 localStorage에 둔다.
+   - **사진 자동 삭제 기간을 줄이지 말 것.** 처음에 "날짜가 바뀌면 삭제"로 만들었다가 자정 직후 아직 PT쌤한테 못 보낸 사진이 통째로 날아간 사고가 있었다. `purgeOldMealPhotos()`는 앱을 열 때마다 실행되고 IndexedDB 삭제는 되돌릴 수 없다. 기간을 건드릴 일이 있으면 반드시 사용자에게 먼저 확인한다.
 4. **Gemini 호출은 기존 함수 재사용.** `callGeminiWithFallback()`, `resizeImageToBase64()`가 이미 있다. 새로 작성하지 않는다. API 키는 `localStorage('gemini_api_key')`에 저장돼 있다.
 5. **코드 수정 후 `sw.js`의 `CACHE_NAME` 버전을 올린다** (`fittrack-vNN` → `vNN+1`). 안 올리면 사용자 기기에 옛 버전이 계속 캐시된다.
 6. **GitHub 업로드는 반드시 git push 또는 파일 업로드 UI로.** 웹에서 복사-붙여넣기 하면 파일이 잘려 앱이 크래시한 이력이 있다 (index.html이 3,300줄/177KB로 큼).
