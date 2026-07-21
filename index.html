@@ -2525,13 +2525,29 @@ async function markMealPhotosSent(ds){
     const st=await _mealStore('readwrite');
     for(const r of await _idb(st.index('date').getAll(ds)))await _idb(st.put({...r,sent:true}));
 }
-// 지난 날짜 사진 정리 (오늘·미래 날짜는 남김)
+// 오늘 포함 3일치는 보관한다. 자정이 지나도 아직 안 보낸 사진이 사라지지 않도록.
+const MEAL_KEEP_DAYS=3;
+function shiftDate(ds,days){
+    const p=ds.split('-').map(Number);
+    const d=new Date(p[0],p[1]-1,p[2]+days);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+// 보관 기간이 지난 사진만 정리 (오늘·미래 날짜는 남김)
 async function purgeOldMealPhotos(){
     try{
-        const today=getKSTDate();
+        const cutoff=shiftDate(getKSTDate(),-(MEAL_KEEP_DAYS-1)); // 이 날짜보다 이전 것만 삭제
         const st=await _mealStore('readwrite');
-        for(const r of await _idb(st.getAll()))if(r.date<today)await _idb(st.delete(r.id));
+        for(const r of await _idb(st.getAll()))if(r.date<cutoff)await _idb(st.delete(r.id));
     }catch(e){/* 보관함 정리 실패는 앱 동작에 영향 없음 */}
+}
+// 보관 기간 안에 아직 안 보낸 사진이 남은 다른 날짜들 (깜빡하고 못 보낸 것 알림용)
+async function getUnsentMealDays(exceptDs){
+    try{
+        const st=await _mealStore('readonly');
+        const cnt={};
+        for(const r of await _idb(st.getAll()))if(!r.sent&&r.date!==exceptDs)cnt[r.date]=(cnt[r.date]||0)+1;
+        return Object.keys(cnt).sort().map(d=>({date:d,n:cnt[d]}));
+    }catch(e){return [];}
 }
 
 /* ─── 밥 사진 카드 UI ─────────────── */
@@ -2553,6 +2569,7 @@ window.renderMealPhotoCard=async function(ds){
     window._mealShareFiles=photos.map((p,i)=>new File([p.blob],`meal_${ds}_${i+1}.jpg`,{type:'image/jpeg'}));
     const canShare=photos.length>0&&!!(navigator.canShare&&navigator.canShare({files:window._mealShareFiles}));
     const allSent=photos.length>0&&photos.every(p=>p.sent);
+    const unsentDays=await getUnsentMealDays(ds);
 
     const thumbs=photos.map((p,i)=>{
         const url=URL.createObjectURL(p.blob);_mealObjectURLs.push(url);
@@ -2572,6 +2589,12 @@ window.renderMealPhotoCard=async function(ds){
         ${photos.length
             ?`<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 2px 10px;">${thumbs}</div>`
             :`<div style="font-size:12px;color:var(--text-muted);padding:6px 0 12px;">밥 먹을 때마다 찍어두면 여기 모여요. 밤에 한 번에 보내세요.</div>`}
+        ${unsentDays.length?`<div style="background:var(--day-bg);border:1px solid #f59e0b;border-radius:10px;padding:10px;margin-bottom:10px;">
+            <div style="font-size:12px;font-weight:bold;color:#f59e0b;margin-bottom:6px;">⚠️ 아직 안 보낸 사진이 있어요</div>
+            ${unsentDays.map(u=>`<button class="btn-sm" style="background:var(--card);color:var(--text);border:1px solid var(--border);padding:7px 10px;font-size:12px;margin:0 5px 5px 0;"
+                onclick="window.updateGlobalDate('${u.date}');document.getElementById('global-date').value='${u.date}';">${u.date} · ${u.n}장 →</button>`).join('')}
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">사진은 ${MEAL_KEEP_DAYS}일간 보관돼요</div>
+        </div>`:''}
         <div style="display:flex;gap:8px;">
             <button class="btn-sm" style="flex:1;background:var(--day-bg);color:var(--primary);border:1px solid var(--primary);padding:12px;font-size:13px;"
                 onclick="document.getElementById('meal-photo-cam').click()">📷 밥 사진 담기</button>
