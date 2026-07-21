@@ -42,6 +42,7 @@ icon*.png       아이콘 4종 (icon.png는 원본 소스, 실제 포맷은 JPEG
 | 단백질 | ~2116–2360 | `renderProteinCard()` `getProteinPresets()` `renderDietRules()` |
 | Gemini 사진 분석 | ~2355–2470 | `resizeImageToBase64()` `callGeminiWithFallback()` `renderPhotoResult()`, `GEMINI_MODELS` |
 | 밥 사진 보관함 (IndexedDB) | ~2475–2615 | `mealDB()` `addMealPhoto()` `getMealPhotos()` `deleteMealPhoto()` `markMealPhotosSent()` `purgeOldMealPhotos()` `renderMealPhotoCard()` `stashMealPhoto()` `shareMealPhotos()` |
+| 저울 사진 → 몸무게 인식 | ~2617–2700 | `handleWeightPhoto()` `renderWeightPhotoSheet()` `saveWeightFromPhoto()` |
 | 루틴 탭 / 헬스장 선택 | ~2473–2680 | `renderRoutine()` `renderGymChipBar()` `renderGymSelectScreen()` `renderTodayRoutine()` |
 | 세션 타이머 | ~2676–2870 | `renderSessionCard()` `updateSessionUI()` `autoStopStaleSessions()` `commitFixedCardioLog()` |
 | 주간 계획·시간표 | ~2876–2957 | `renderWeekPlan()` `renderTimetable()` |
@@ -77,7 +78,15 @@ git add -A && git commit -m "작업 내용" && git push
 
 ## 사진 공유 (navigator.share)
 
-- **문구 없이 사진만 보낸다.** `navigator.share({files})`만 호출하고 `title`/`text`를 붙이지 않는다 (사용자 요청). 천국의 계단 인증사진(`shareCardioPhoto`), 밥 사진(`shareMealPhotos`) 둘 다 해당.
+- **문구 없이 사진만 보낸다.** `navigator.share({files})`만 호출하고 `title`/`text`를 붙이지 않는다 (사용자 요청). 천국의 계단 인증사진(`shareCardioPhoto`), 밥 사진(`shareMealPhotos`), 저울 사진(`saveWeightFromPhoto`) 모두 해당.
+
+**사진 3종의 전송 방식이 다르다 — 헷갈리지 말 것:**
+
+| 사진 | 저장 | 전송 시점 |
+|---|---|---|
+| 밥 사진 | IndexedDB에 하루 종일 보관 | 밤에 모아서 한 번에 |
+| 공복 몸무게(저울) | 저장 안 함 (숫자만 `fit_data`에) | 찍은 자리에서 바로 |
+| 천국의 계단 | 저장 안 함 | 찍은 자리에서 바로 |
 - **`navigator.share`는 사용자가 버튼을 탭한 순간 동기적으로 호출해야 한다.** 앞에 `await`가 끼면 iOS Safari가 "user gesture 없음"으로 거부한다. 그래서 밥 사진은 카드를 그릴 때 미리 `window._mealShareFiles`에 `File[]`을 만들어두고, 버튼 핸들러는 그걸 그대로 넘긴다. 이 구조를 바꾸지 말 것.
 - 데스크톱 브라우저는 파일 공유를 대부분 지원하지 않아 `navigator.canShare({files})`가 `false`다. 정상이며, 이때는 안내 문구로 대체된다. 실제 동작은 iOS 홈화면 PWA에서 확인해야 한다.
 

@@ -736,8 +736,11 @@ function renderDaySummary(ds){
         <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px;">
             <div style="flex:1;"><label>공복 몸무게 (kg)</label>
             <input type="number" id="quick-weight" value="${day.weight||''}" step="0.01"></div>
+            <button onclick="document.getElementById('weight-photo-cam').click()" class="btn-sm" title="저울 사진 찍기"
+                style="background:var(--day-bg);color:var(--primary);border:1px solid var(--primary);height:45px;padding:0 14px;font-size:17px;">📷</button>
             <button onclick="saveQuickWeight('${ds}')" class="btn-sm" style="background:var(--primary);color:#fff;height:45px;padding:0 16px;">저장</button>
         </div>
+        <input type="file" id="weight-photo-cam" accept="image/*" capture="environment" style="display:none;" onchange="handleWeightPhoto(this,'${ds}')">
         ${volume>0?`<div class="vol-badge">⚡ 오늘 총 볼륨: <strong>${volume.toLocaleString()}kg</strong></div>`:''}
 
         <h5 style="margin:16px 0 10px;">🏋️ 운동 목록</h5>
@@ -2613,6 +2616,92 @@ window.shareMealPhotos=async function(ds){
     try{await markMealPhotosSent(ds);}catch(e){}
     showToast('PT쌤한테 보냈어요!','📤');
     renderMealPhotoCard(ds);
+};
+
+/* ==================================================
+   ⚖️ 저울 사진 → 몸무게 자동 인식 + PT쌤한테 바로 전송
+   (아침 공복 몸무게용. 밥 사진과 달리 보관하지 않고 그 자리에서 보낸다)
+================================================== */
+window._weightPhotoFile=null;
+let _weightPhotoURL=null;
+function _revokeWeightURL(){if(_weightPhotoURL){URL.revokeObjectURL(_weightPhotoURL);_weightPhotoURL=null;}}
+
+window.handleWeightPhoto=async function(input,ds){
+    const file=input.files[0];
+    input.value='';
+    if(!file)return; // 촬영 취소
+    window._weightPhotoFile=file;
+    const key=localStorage.getItem('gemini_api_key')||'';
+    if(!key){renderWeightPhotoSheet(null,ds);return;} // 키가 없으면 인식 없이 사진만
+    openPhotoLoadingSheet();
+    try{
+        const b64=await resizeImageToBase64(file,768);
+        const prompt='사진은 체중계 화면이다. 화면에 표시된 몸무게 숫자만 읽어라. 단위가 kg가 아니면 kg로 환산해라. 숫자를 읽을 수 없으면 weight_kg에 0을 넣어라. 반드시 아래 JSON 형식만 출력하고 다른 텍스트는 절대 쓰지 마.\n{"weight_kg":숫자,"note":"읽은 근거 한 줄(한국어)"}';
+        const body=JSON.stringify({contents:[{parts:[
+            {text:prompt},
+            {inline_data:{mime_type:'image/jpeg',data:b64}}
+        ]}]});
+        const {data,model,fellBack}=await callGeminiWithFallback(key,body);
+        if(fellBack)showToast('한도 초과로 '+model+'(으)로 전환했어요','🔄');
+        const text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+        renderWeightPhotoSheet(JSON.parse(text.replace(/```json|```/g,'').trim()),ds,model);
+    }catch(e){
+        showToast('숫자 인식 실패 — 직접 입력해주세요','⚠️');
+        renderWeightPhotoSheet(null,ds); // 인식은 실패해도 사진 전송은 되도록
+    }
+};
+
+function renderWeightPhotoSheet(r,ds,model){
+    const file=window._weightPhotoFile;
+    _revokeWeightURL();
+    _weightPhotoURL=URL.createObjectURL(file);
+    const num=r?Math.round((parseFloat(r.weight_kg)||0)*100)/100:0;
+    const canShare=!!(navigator.canShare&&navigator.canShare({files:[file]}));
+    document.getElementById('quick-log-content').innerHTML=`
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);">⚖️ 공복 몸무게${model?` · <span style="opacity:.7;">${model}</span>`:''}</div>
+                ${num>0?`<div style="font-size:20px;font-weight:900;color:var(--primary);margin-top:2px;">${num}kg 읽었어요</div>`
+                       :`<div style="font-size:15px;font-weight:bold;margin-top:2px;">숫자를 직접 입력해주세요</div>`}
+                ${r&&r.note&&num>0?`<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">💬 ${r.note}</div>`:''}
+            </div>
+            <button onclick="closeWeightPhotoSheet()" style="background:var(--day-bg);border:none;border-radius:8px;padding:6px 12px;color:var(--text-muted);font-size:13px;cursor:pointer;">✕</button>
+        </div>
+        <img src="${_weightPhotoURL}" style="width:100%;max-height:220px;object-fit:contain;border-radius:12px;background:var(--day-bg);margin-bottom:12px;">
+        <label style="font-size:12px;color:var(--text-muted);">몸무게 (kg) — 틀리면 수정하세요</label>
+        <input type="number" id="weight-photo-val" value="${num>0?num:''}" step="0.01" placeholder="예: 72.4"
+            style="font-size:20px;font-weight:bold;text-align:center;margin-top:4px;border-color:var(--primary);">
+        ${num>0?'<div style="font-size:11px;color:var(--text-muted);margin-top:8px;">⚠️ AI가 읽은 값이라 틀릴 수 있어요. 꼭 확인해주세요.</div>':''}
+        ${canShare
+            ?`<button class="primary" style="margin-top:14px;" onclick="saveWeightFromPhoto('${ds}',true)">💾 저장하고 📤 PT쌤한테 보내기</button>
+               <div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center;">공유 시트가 뜨면 카카오톡을 선택하세요 · 사진만 전송돼요</div>
+               <button class="primary" style="margin-top:8px;background:var(--card);color:var(--primary);border:2px solid var(--primary);" onclick="saveWeightFromPhoto('${ds}',false)">저장만 하기</button>`
+            :`<button class="primary" style="margin-top:14px;" onclick="saveWeightFromPhoto('${ds}',false)">💾 저장하기</button>
+               <div style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:center;">이 브라우저에서는 바로 공유가 안 돼요. 홈 화면에 설치한 앱으로 열어주세요.</div>`}`;
+    document.getElementById('quick-log-overlay').classList.add('show');
+    setTimeout(()=>document.getElementById('quick-log-sheet').classList.add('show'),10);
+}
+window.closeWeightPhotoSheet=function(){_revokeWeightURL();closeQuickLog();};
+
+window.saveWeightFromPhoto=async function(ds,share){
+    const v=parseFloat(document.getElementById('weight-photo-val')?.value);
+    if(v>0){
+        const data=getData();
+        if(!data[ds])data[ds]={};
+        data[ds].weight=String(v);
+        saveData(data);
+    }
+    if(share){
+        try{
+            await navigator.share({files:[window._weightPhotoFile]}); // 사진만 보냄 — 제목/문구 붙이지 않음
+        }catch(e){
+            if(e&&e.name!=='AbortError')showToast('공유에 실패했어요','⚠️');
+        }
+    }
+    _revokeWeightURL();
+    closeQuickLog();
+    showToast(v>0?`몸무게 ${v}kg 저장!`:'사진만 처리했어요','⚖️');
+    renderDashboard();
 };
 
 /* ─── 루틴 탭 (헬스장 선택 → 오늘 루틴 / 주간 계획 / 시간표) ────── */
